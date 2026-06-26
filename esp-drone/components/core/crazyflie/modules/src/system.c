@@ -214,9 +214,9 @@ static void espnowMocapHandler(const float pose8[8])
   blimpGuidanceSetMocap(pose8);
 }
 /* Live gain-tuning frame (56 bytes) from the panel -> update the controller. */
-static void espnowGainsHandler(const float gains14[14])
+static void espnowGainsHandler(const float gains[BLIMP_NUM_GAINS])
 {
-  blimpGuidanceSetGains(gains14);
+  blimpGuidanceSetGains(gains);
 }
 #endif
 

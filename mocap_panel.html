@@ -79,6 +79,10 @@
   </div>
 
   <h2>Tuning <span style="font-weight:400;color:#7d8da0">(live over ESP-NOW)</span></h2>
+  <div style="display:flex;gap:6px;margin-bottom:8px">
+    <button style="flex:1" onclick="preset('tune')" title="vertical off, low forward — isolate heading/forward">Tune mode (fwd only)</button>
+    <button style="flex:1" onclick="preset('full')">Full</button>
+  </div>
   <div id="gains"></div>
   <button style="width:100%" onclick="resetGains()">Reset gains to defaults</button>
   <div class="hint">Move a slider while flying — the new value rides ESP-NOW to the drone instantly, no reflash.</div>
@@ -92,8 +96,9 @@ const GDEF=[
  ["kdZ","Alt D (damping)",0,20000,500,"Altitude (up/down)"],
  ["zff","Buoyancy feed-fwd",-8000,8000,200,"Altitude (up/down)"],
  ["iLimZ","Alt I-limit",0,16000,500,"Altitude (up/down)"],
- ["kpYaw","Heading P (/rad)",0,3,0.05,"Heading (turn)"],
- ["kdYaw","Heading D (gyro)",0,0.1,0.005,"Heading (turn)"],
+ ["yawKpHead","Heading P (→rate)",0,60,1,"Heading (turn, rate-limited)"],
+ ["yawRateMax","Max turn rate °/s",5,90,1,"Heading (turn, rate-limited)"],
+ ["yawKpRate","Rate gain",0,0.1,0.002,"Heading (turn, rate-limited)"],
  ["kpFwd","Forward P (/m)",0,2,0.05,"Forward (drive)"],
  ["fwdMaxN","Forward max",0,1,0.05,"Forward (drive)"],
  ["arriveR","Arrive radius (m)",0.05,1,0.05,"Forward (drive)"],
@@ -184,6 +189,7 @@ function sendTarget(){post({action:'target',x:+tx.value,y:+ty.value,z:+tz.value,
 function toggleFly(){post({action:'fly',on:!(state&&state.flying)});}
 function kill(){post({action:'kill'});}
 function resetGains(){post({action:'gains_reset'});gset=false;}
+function preset(p){post({action:'preset',preset:p});gset=false;}
 window.addEventListener('blur',()=>post({action:'kill'}));
 
 let tset=false, gset=false;

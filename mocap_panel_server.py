@@ -22,13 +22,14 @@ DIR = os.path.dirname(os.path.abspath(__file__))
 PORT = 8500
 
 # Guidance gains — order MUST match blimpGuidanceSetGains() in blimp_guidance.c.
-GAIN_ORDER = ["kpZ", "kiZ", "kdZ", "zff", "iLimZ", "kpYaw", "kdYaw",
+GAIN_ORDER = ["kpZ", "kiZ", "kdZ", "zff", "iLimZ",
+              "yawKpHead", "yawRateMax", "yawKpRate",
               "kpFwd", "fwdMaxN", "arriveR", "headGate",
               "fwdMaxPwm", "turnMaxPwm", "vertMaxPwm"]
 GAIN_DEFAULTS = {"kpZ": 12000, "kiZ": 1500, "kdZ": 6000, "zff": 0, "iLimZ": 8000,
-                 "kpYaw": 0.9, "kdYaw": 0.015, "kpFwd": 0.6, "fwdMaxN": 1.0,
-                 "arriveR": 0.25, "headGate": 60, "fwdMaxPwm": 18000,
-                 "turnMaxPwm": 9000, "vertMaxPwm": 16000}
+                 "yawKpHead": 25, "yawRateMax": 30, "yawKpRate": 0.02,
+                 "kpFwd": 0.6, "fwdMaxN": 1.0, "arriveR": 0.25, "headGate": 60,
+                 "fwdMaxPwm": 18000, "turnMaxPwm": 9000, "vertMaxPwm": 16000}
 
 lock = threading.Lock()
 S = {
@@ -131,7 +132,7 @@ def fly_thread(bridge_port):
                 dirty = S["gains_dirty"]; g = dict(S["gains"]); S["gains_dirty"] = False
             if dirty:
                 try:
-                    ser.write(b"\xA7" + struct.pack("<14f", *[float(g[k]) for k in GAIN_ORDER]))
+                    ser.write(b"\xA7" + struct.pack("<15f", *[float(g[k]) for k in GAIN_ORDER]))
                 except Exception as e:
                     with lock: S["err"] = "bridge gains: %s" % e
             h0, h1, alt, yaw, valid = mapped()
@@ -169,6 +170,16 @@ def handle(d):
                 except Exception: pass
         elif a == "gains_reset":
             S["gains"] = dict(GAIN_DEFAULTS); S["gains_dirty"] = True
+        elif a == "preset":
+            p = d.get("preset")
+            if p == "tune":        # forward-only, slow: no vertical, low forward
+                S["gains"]["vertMaxPwm"] = 0
+                S["gains"]["fwdMaxPwm"] = 8000
+                S["gains_dirty"] = True
+            elif p == "full":      # restore vertical + forward authority
+                S["gains"]["vertMaxPwm"] = GAIN_DEFAULTS["vertMaxPwm"]
+                S["gains"]["fwdMaxPwm"] = GAIN_DEFAULTS["fwdMaxPwm"]
+                S["gains_dirty"] = True
     return {"ok": True}
 
 

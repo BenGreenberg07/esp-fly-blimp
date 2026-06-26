@@ -30,10 +30,10 @@ bool blimpGuidanceAutoEnabled(void);
 void blimpGuidanceSetMocap(const float pose8[8]);
 
 /* Live-tune the guidance gains from outside the CRTP param path (ESP-NOW). The
- * 14 floats are, in order: kpZ,kiZ,kdZ,zff,iLimZ, kpYaw,kdYaw, kpFwd,fwdMaxN,
- * arriveR,headGate, fwdMaxPwm,turnMaxPwm,vertMaxPwm. Sent only when the host
- * changes a value (event-driven), so it adds ~nothing to the per-loop load. */
-#define BLIMP_NUM_GAINS 14
+ * 15 floats are, in order: kpZ,kiZ,kdZ,zff,iLimZ, yawKpHead,yawRateMax,yawKpRate,
+ * kpFwd,fwdMaxN,arriveR,headGate, fwdMaxPwm,turnMaxPwm,vertMaxPwm. Sent only when
+ * the host changes a value (event-driven), so it adds ~nothing to the loop. */
+#define BLIMP_NUM_GAINS 15
 void blimpGuidanceSetGains(const float g[BLIMP_NUM_GAINS]);
 
 /* Drop out of autonomous mode (clears the ESP-NOW auto-engage latch + resets the

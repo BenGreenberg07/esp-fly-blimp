@@ -94,9 +94,15 @@ static float bc_kd_z   = 6000.0f;    // PWM per (meter/second) of climb rate
 static float bc_zff    = 0.0f;       // constant buoyancy feed-forward, PWM
 static float bc_iLim_z = 8000.0f;    // |Ki*integral| clamp (anti-windup), PWM
 
-// Heading loop
-static float bc_kp_yaw = 0.9f;       // (normalized turn) per radian of bearing err
-static float bc_kd_yaw = 0.015f;     // (normalized turn) per (deg/s) yaw rate
+// Heading loop — CASCADE (heading -> rate-limited). A big helium envelope has
+// high yaw inertia and almost no natural damping, and the forward motors are
+// unidirectional (no reverse braking), so we never command turn *power* directly.
+// Instead: heading error -> a desired turn RATE (capped), then drive the gyro to
+// it. The cap means it can never wind up into a spin faster than the differential
+// thrust can cancel; at the target heading the desired rate is 0 so it brakes.
+static float bc_yawKpHead  = 25.0f;  // heading err (rad) -> desired yaw rate (deg/s)
+static float bc_yawRateMax = 30.0f;  // cap on desired yaw rate (deg/s)
+static float bc_yawKpRate  = 0.02f;  // (deg/s of rate error) -> normalized turn
 
 // Forward loop
 static float bc_kp_fwd   = 0.6f;     // (normalized fwd) per meter of range
@@ -148,9 +154,9 @@ void blimpGuidanceSetGains(const float g[BLIMP_NUM_GAINS])
     if (!isfinite(g[i])) return;                 // reject a corrupt frame wholesale
   }
   bc_kp_z = g[0]; bc_ki_z = g[1]; bc_kd_z = g[2]; bc_zff = g[3]; bc_iLim_z = g[4];
-  bc_kp_yaw = g[5]; bc_kd_yaw = g[6];
-  bc_kp_fwd = g[7]; bc_fwdMaxN = g[8]; bc_arriveR = g[9]; bc_headGate = g[10];
-  bc_fwdMaxPwm = g[11]; bc_turnMaxPwm = g[12]; bc_vertMaxPwm = g[13];
+  bc_yawKpHead = g[5]; bc_yawRateMax = g[6]; bc_yawKpRate = g[7];
+  bc_kp_fwd = g[8]; bc_fwdMaxN = g[9]; bc_arriveR = g[10]; bc_headGate = g[11];
+  bc_fwdMaxPwm = g[12]; bc_turnMaxPwm = g[13]; bc_vertMaxPwm = g[14];
 }
 
 void blimpGuidanceClearAuto(void)
@@ -193,8 +199,9 @@ void blimpGuidanceUpdate(control_t *control, const state_t *state,
   float headRef = arrived ? (mc_tyaw * (float)M_PI / 180.0f) : bearing;
   float yawErr = wrapPi(headRef - yawNow);
 
-  // ---- 2. HEADING LOOP -> normalized turn [-1,1] ----
-  float uTurn = bc_kp_yaw * yawErr - bc_kd_yaw * gyroYawDps;
+  // ---- 2. HEADING LOOP (cascade: heading -> rate-limited) -> turn [-1,1] ----
+  float desiredRate = constrain(bc_yawKpHead * yawErr, -bc_yawRateMax, bc_yawRateMax);
+  float uTurn = bc_yawKpRate * (desiredRate - gyroYawDps);   // drive gyro to desired
   uTurn = constrain(uTurn, -1.0f, 1.0f);
 
   // ---- 3. FORWARD LOOP -> normalized forward [0,1] ----
@@ -249,8 +256,9 @@ PARAM_ADD(PARAM_FLOAT,  kiZ,       &bc_ki_z)
 PARAM_ADD(PARAM_FLOAT,  kdZ,       &bc_kd_z)
 PARAM_ADD(PARAM_FLOAT,  zff,       &bc_zff)
 PARAM_ADD(PARAM_FLOAT,  iLimZ,     &bc_iLim_z)
-PARAM_ADD(PARAM_FLOAT,  kpYaw,     &bc_kp_yaw)
-PARAM_ADD(PARAM_FLOAT,  kdYaw,     &bc_kd_yaw)
+PARAM_ADD(PARAM_FLOAT,  yawKpHead,  &bc_yawKpHead)
+PARAM_ADD(PARAM_FLOAT,  yawRateMax, &bc_yawRateMax)
+PARAM_ADD(PARAM_FLOAT,  yawKpRate,  &bc_yawKpRate)
 PARAM_ADD(PARAM_FLOAT,  kpFwd,     &bc_kp_fwd)
 PARAM_ADD(PARAM_FLOAT,  fwdMaxN,   &bc_fwdMaxN)
 PARAM_ADD(PARAM_FLOAT,  arriveR,   &bc_arriveR)

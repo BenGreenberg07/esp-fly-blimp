@@ -34,18 +34,18 @@ static void recv_cb(const esp_now_recv_info_t *info, const uint8_t *data, int le
 {
     /* 56-byte frame = live GAIN tuning (14 float32). Checked first; never drives
      * motors, just updates gains. Validated by the handler. */
-    if (len >= 56 && s_gains_cb) {
-        float g[14];
+    if (len >= 60 && s_gains_cb) {
+        float g[15];
         memcpy(g, data, sizeof(g));
         s_gains_cb(g);
-        ESP_LOGI(TAG, "gains rx (kpZ=%.0f kpYaw=%.2f kpFwd=%.2f arriveR=%.2f)",
-                 g[0], g[5], g[7], g[9]);
+        ESP_LOGI(TAG, "gains rx (kpZ=%.0f yawKpHead=%.1f rateMax=%.0f kpFwd=%.2f)",
+                 g[0], g[5], g[6], g[8]);
         return;
     }
     /* 32-byte frame = AUTONOMOUS mocap pose (8 float32: cx,cy,cz,cyaw,tx,ty,tz,tyaw).
      * Checked before the 16-byte manual case, so it is never mistaken for one.
      * Validated so noise/other devices can't engage autonomy. */
-    if (len >= 32 && len < 56 && s_mocap_cb) {
+    if (len >= 32 && len < 60 && s_mocap_cb) {
         float p[8];
         memcpy(p, data, sizeof(p));
         for (int i = 0; i < 8; i++) {

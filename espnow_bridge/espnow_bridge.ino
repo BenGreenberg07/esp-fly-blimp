@@ -98,7 +98,7 @@ void loop() {
     if (idx < 0) {
       if (b == 0xA5) { idx = 0; want = 16; }       // manual setpoint frame
       else if (b == 0xA6) { idx = 0; want = 32; }  // mocap pose frame
-      else if (b == 0xA7) { idx = 0; want = 56; }  // gain-tuning frame
+      else if (b == 0xA7) { idx = 0; want = 60; }  // gain-tuning frame (15 float32)
     } else {
       payload[idx++] = b;
       if (idx >= want) {               // full frame -> broadcast it (16 or 32 bytes)
