@@ -1,0 +1,20 @@
+ERC WARNING: Insufficient drive current on net GND for pin POWER-IN pin 18/GND of MPU-6050/U2.
+ERC WARNING: Insufficient drive current on net +3V3 for pin POWER-IN pin 8/VLOGIC of MPU-6050/U2.
+ERC WARNING: Insufficient drive current on net +3V3 for pin POWER-IN pin 13/VDD of MPU-6050/U2.
+ERC WARNING: Unconnected pin: BIDIRECTIONAL pin 14/V5V of XIAO_ESP32S3/U1.
+ERC WARNING: Unconnected pin: BIDIRECTIONAL pin 17/MTDI of XIAO_ESP32S3/U1.
+ERC WARNING: Unconnected pin: BIDIRECTIONAL pin 18/MTDO of XIAO_ESP32S3/U1.
+ERC WARNING: Unconnected pin: BIDIRECTIONAL pin 19/CHIP_EN of XIAO_ESP32S3/U1.
+ERC WARNING: Unconnected pin: BIDIRECTIONAL pin 21/MTMS of XIAO_ESP32S3/U1.
+ERC WARNING: Unconnected pin: BIDIRECTIONAL pin 22/MTCK of XIAO_ESP32S3/U1.
+ERC WARNING: Unconnected pin: BIDIRECTIONAL pin 23/USB_DN of XIAO_ESP32S3/U1.
+ERC WARNING: Unconnected pin: BIDIRECTIONAL pin 24/USB_DP of XIAO_ESP32S3/U1.
+ERC WARNING: Unconnected pin: INPUT pin 11/FSYNC of MPU-6050/U2.
+ERC WARNING: Unconnected pin: INPUT pin 1/CLKIN of MPU-6050/U2.
+ERC WARNING: Unconnected pin: BIDIRECTIONAL pin 6/AUX_DA of MPU-6050/U2.
+ERC WARNING: Unconnected pin: OUTPUT pin 7/AUX_CL of MPU-6050/U2.
+ERC WARNING: Unconnected pin: PASSIVE pin 20/CPOUT of MPU-6050/U2.
+ERC WARNING: Unconnected pin: PASSIVE pin 10/REGOUT of MPU-6050/U2.
+ERC INFO: 17 warnings found while running ERC.
+ERC INFO: 0 errors found while running ERC.
+

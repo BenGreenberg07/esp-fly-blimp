@@ -1,0 +1,212 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Blimp Mocap Panel</title>
+<style>
+  :root{color-scheme:dark}
+  *{box-sizing:border-box}
+  body{margin:0;background:#0b0f14;color:#e6edf3;font:13px/1.4 -apple-system,Segoe UI,Roboto,sans-serif;display:flex;height:100vh;overflow:hidden}
+  #view{flex:1;position:relative;background:radial-gradient(circle at 50% 40%,#11202e,#0b0f14 70%)}
+  canvas{display:block;width:100%;height:100%}
+  #hud{position:absolute;top:10px;left:12px;font-size:12px;color:#9fb2c4;pointer-events:none}
+  #hud b{color:#e6edf3}
+  #side{width:330px;padding:14px 16px;background:#11161d;overflow-y:auto;border-left:1px solid #20262e}
+  h1{font-size:15px;margin:0 0 12px}
+  h2{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#7d8da0;margin:14px 0 6px}
+  .card{background:#0b0f14;border:1px solid #232c36;border-radius:9px;padding:10px 12px;margin-bottom:10px}
+  .row{display:flex;justify-content:space-between;align-items:center;margin:4px 0}
+  .mono{font-family:ui-monospace,Menlo,monospace}
+  .big{font-size:22px;font-weight:600}
+  label{color:#8b98a8;font-size:12px}
+  input[type=number]{width:62px;background:#0b0f14;border:1px solid #2a323c;color:#e6edf3;border-radius:5px;padding:3px 5px;font-family:ui-monospace,monospace}
+  button{cursor:pointer;border:1px solid #2a323c;background:#1c232c;color:#e6edf3;border-radius:6px;padding:7px 10px;font-size:13px}
+  button:hover{background:#283039}
+  .seg{display:flex;gap:6px}.seg button.on{background:#1f6feb;border-color:#1f6feb}
+  #fly{width:100%;padding:12px;font-size:15px;font-weight:700;background:#238636;border-color:#238636;margin-bottom:8px;border-radius:8px}
+  #fly.flying{background:#1f6feb;border-color:#1f6feb}
+  #kill{width:100%;padding:12px;font-size:15px;font-weight:800;background:#da3633;border-color:#da3633;border-radius:8px}
+  .pill{padding:1px 8px;border-radius:10px;font-size:11px}.ok{background:#1a7f37}.bad{background:#6e1517}
+  .axx{color:#ff6b6b}.axy{color:#6bff95}.axz{color:#6ba8ff}
+  #err{color:#ffa198;font-size:12px;min-height:15px;margin-top:4px}
+  .hint{color:#6f7d8c;font-size:11px;margin-top:6px}
+  .g{margin:7px 0}
+  .g .lab{display:flex;justify-content:space-between;font-size:12px;margin-bottom:2px}
+  .g .lab .v{font-family:ui-monospace,monospace;color:#7ee0a1}
+  .g input[type=range]{width:100%;accent-color:#1f6feb;height:16px}
+  details{margin-bottom:8px;border:1px solid #232c36;border-radius:9px;background:#0b0f14}
+  summary{cursor:pointer;padding:9px 12px;font-size:12px;font-weight:600;color:#cdd9e5;list-style:none}
+  summary::-webkit-details-marker{display:none}
+  details[open] summary{border-bottom:1px solid #232c36}
+  .gbody{padding:8px 12px}
+</style></head>
+<body>
+<div id="view"><canvas id="c"></canvas>
+  <div id="hud"><b id="hudpos">—</b><br><span id="hudalt"></span></div>
+  <div style="position:absolute;bottom:8px;left:12px;font-size:11px;color:#5d6a78">drag rotate · scroll zoom</div>
+</div>
+
+<div id="side">
+  <h1>🎈 Blimp Mocap Panel</h1>
+
+  <div class="card">
+    <div class="row"><label>Tracking</label><span id="track" class="pill bad">no data</span></div>
+    <div class="row"><label>NatNet</label><span class="mono" id="rate">0 Hz</span></div>
+    <div class="row"><label>ESP-NOW bridge</label><span class="mono" id="bridge">—</span></div>
+  </div>
+
+  <button id="fly" onclick="toggleFly()">▶ FLY (autonomous)</button>
+  <button id="kill" onclick="kill()">■ KILL</button>
+  <div id="err"></div>
+
+  <h2>Pose</h2>
+  <div class="card">
+    <div class="row mono"><span class="axx">X raw</span><span id="rx">0.000</span></div>
+    <div class="row mono"><span class="axy">Y raw</span><span id="ry">0.000</span></div>
+    <div class="row mono"><span class="axz">Z raw</span><span id="rz">0.000</span></div>
+    <div class="row"><label>Up axis</label>
+      <span class="seg"><button id="upY" onclick="setUp('Y')">Y</button><button id="upZ" onclick="setUp('Z')">Z</button></span>
+    </div>
+    <div class="row"><label>altitude</label><span class="mono big" id="alt">0.000</span></div>
+    <div class="row mono"><label>heading</label><span id="yaw">0°</span></div>
+    <div class="hint">Lift the blimp — the raw axis that changes is UP.</div>
+  </div>
+
+  <h2>Target</h2>
+  <div class="card">
+    <div class="row"><label>X</label><input type="number" step="0.1" id="tx" oninput="sendTarget()"></div>
+    <div class="row"><label>Y</label><input type="number" step="0.1" id="ty" oninput="sendTarget()"></div>
+    <div class="row"><label>Z (alt)</label><input type="number" step="0.1" id="tz" oninput="sendTarget()"></div>
+    <div class="row"><label>yaw°</label><input type="number" step="5" id="tyaw" oninput="sendTarget()"></div>
+    <div class="row mono"><label>distance</label><span id="dist" class="big">—</span></div>
+  </div>
+
+  <h2>Tuning <span style="font-weight:400;color:#7d8da0">(live over ESP-NOW)</span></h2>
+  <div id="gains"></div>
+  <button style="width:100%" onclick="resetGains()">Reset gains to defaults</button>
+  <div class="hint">Move a slider while flying — the new value rides ESP-NOW to the drone instantly, no reflash.</div>
+</div>
+
+<script>
+// ---- gain slider definitions: [name,label,min,max,step,group] ----
+const GDEF=[
+ ["kpZ","Alt P (PWM/m)",0,40000,500,"Altitude (up/down)"],
+ ["kiZ","Alt I",0,6000,100,"Altitude (up/down)"],
+ ["kdZ","Alt D (damping)",0,20000,500,"Altitude (up/down)"],
+ ["zff","Buoyancy feed-fwd",-8000,8000,200,"Altitude (up/down)"],
+ ["iLimZ","Alt I-limit",0,16000,500,"Altitude (up/down)"],
+ ["kpYaw","Heading P (/rad)",0,3,0.05,"Heading (turn)"],
+ ["kdYaw","Heading D (gyro)",0,0.1,0.005,"Heading (turn)"],
+ ["kpFwd","Forward P (/m)",0,2,0.05,"Forward (drive)"],
+ ["fwdMaxN","Forward max",0,1,0.05,"Forward (drive)"],
+ ["arriveR","Arrive radius (m)",0.05,1,0.05,"Forward (drive)"],
+ ["headGate","Face gate (deg)",10,90,5,"Forward (drive)"],
+ ["fwdMaxPwm","Fwd power cap",0,40000,1000,"Output power caps"],
+ ["turnMaxPwm","Turn power cap",0,20000,500,"Output power caps"],
+ ["vertMaxPwm","Vert power cap",0,32000,1000,"Output power caps"],
+];
+// build grouped slider UI
+(function(){
+  const root=document.getElementById('gains'); const groups={};
+  GDEF.forEach(([n,l,mn,mx,st,grp])=>{
+    if(!groups[grp]){const d=document.createElement('details');d.open=(grp.indexOf('Output')<0);
+      d.innerHTML='<summary>'+grp+'</summary><div class="gbody"></div>';root.appendChild(d);groups[grp]=d.querySelector('.gbody');}
+    const w=document.createElement('div');w.className='g';
+    w.innerHTML='<div class="lab"><span>'+l+'</span><span class="v" id="gv_'+n+'">—</span></div>'+
+      '<input type="range" id="gs_'+n+'" min="'+mn+'" max="'+mx+'" step="'+st+'">';
+    groups[grp].appendChild(w);
+    w.querySelector('input').addEventListener('input',e=>{
+      document.getElementById('gv_'+n).textContent=(+e.target.value);
+      post({action:'gain',name:n,value:+e.target.value});
+    });
+  });
+})();
+
+const cv=document.getElementById('c'), ctx=cv.getContext('2d');
+let az=0.7, el=0.5, scale=80, up='Z', dragging=false, lx=0, ly=0, state=null, trail=[];
+function rsz(){cv.width=cv.clientWidth*devicePixelRatio;cv.height=cv.clientHeight*devicePixelRatio;ctx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0);}
+window.addEventListener('resize',rsz); rsz();
+cv.addEventListener('mousedown',e=>{dragging=true;lx=e.clientX;ly=e.clientY});
+window.addEventListener('mouseup',()=>dragging=false);
+window.addEventListener('mousemove',e=>{if(!dragging)return;az+=(e.clientX-lx)*0.01;el=Math.max(-1.4,Math.min(1.4,el+(e.clientY-ly)*0.01));lx=e.clientX;ly=e.clientY});
+cv.addEventListener('wheel',e=>{e.preventDefault();scale=Math.max(25,Math.min(300,scale*(e.deltaY<0?1.1:0.9)))},{passive:false});
+
+function proj(x,y,z){
+  let g0,g1,u; if(up==='Y'){g0=x;g1=z;u=y;}else{g0=x;g1=y;u=z;}
+  const a=g0*Math.cos(az)-g1*Math.sin(az), b=g0*Math.sin(az)+g1*Math.cos(az);
+  return [cv.clientWidth/2+a*scale, cv.clientHeight/2-(u*Math.cos(el)-b*Math.sin(el))*scale];
+}
+function P(p){return up==='Y'?proj(p[0],p[2],p[1]):proj(p[0],p[1],p[2]);}  // (h0,h1,alt)->screen
+function line(p,q,col,w){ctx.strokeStyle=col;ctx.lineWidth=w||1;ctx.beginPath();ctx.moveTo(p[0],p[1]);ctx.lineTo(q[0],q[1]);ctx.stroke();}
+function dot(p,r,col){ctx.fillStyle=col;ctx.beginPath();ctx.arc(p[0],p[1],r,0,7);ctx.fill();}
+
+function draw(){
+  ctx.clearRect(0,0,cv.clientWidth,cv.clientHeight);
+  // floor grid (alt=0) in ground coords
+  ctx.globalAlpha=0.45;
+  for(let i=-3;i<=3;i++){line(P([i,-3,0]),P([i,3,0]),'#1b232c');line(P([-3,i,0]),P([3,i,0]),'#1b232c');}
+  // room walls (light)
+  ctx.globalAlpha=0.18;const H=2.2;
+  [[-3,-3],[3,-3],[3,3],[-3,3]].forEach(c=>line(P([c[0],c[1],0]),P([c[0],c[1],H]),'#3a4858',1));
+  ctx.globalAlpha=1;
+  // world axes
+  line(P([0,0,0]),P([1.5,0,0]),'#ff6b6b',2);
+  line(P([0,0,0]),P([0,1.5,0]),'#6bff95',2);
+  line(P([0,0,0]),P([0,0,1.5]),'#6ba8ff',2);
+  ctx.font='12px ui-monospace';
+  ctx.fillStyle='#ff6b6b';ctx.fillText('X',...P([1.62,0,0]));
+  ctx.fillStyle='#6bff95';ctx.fillText('Y',...P([0,1.62,0]));
+  ctx.fillStyle='#6ba8ff';ctx.fillText('Z',...P([0,0,1.62]));
+  if(!state)return requestAnimationFrame(draw);
+  const t=state.target, m=state.mapped;
+  // target: stalk + ring + crosshair
+  const tg=[t.x,t.y,t.z], tf=[t.x,t.y,0], tp=P(tg);
+  ctx.globalAlpha=0.5;line(P(tf),tp,'#f0a020',1);ctx.globalAlpha=1;
+  ctx.strokeStyle='#f0a020';ctx.lineWidth=2;ctx.beginPath();ctx.arc(tp[0],tp[1],9,0,7);ctx.stroke();
+  line([tp[0]-13,tp[1]],[tp[0]+13,tp[1]],'#f0a020',1);line([tp[0],tp[1]-13],[tp[0],tp[1]+13],'#f0a020',1);
+  // blimp
+  if(state.valid){
+    const b=[m.h0,m.h1,m.alt], bp=P(b), foot=P([m.h0,m.h1,0]);
+    trail.push(b);if(trail.length>140)trail.shift();
+    ctx.globalAlpha=0.35;ctx.strokeStyle='#58a6ff';ctx.lineWidth=1.5;ctx.beginPath();
+    trail.forEach((q,i)=>{const s=P(q);i?ctx.lineTo(s[0],s[1]):ctx.moveTo(s[0],s[1]);});ctx.stroke();ctx.globalAlpha=1;
+    ctx.globalAlpha=0.5;line(bp,foot,'#2a3744',1);ctx.globalAlpha=1;dot(foot,2,'#2a3744');
+    line(bp,tp,'#f0a020',1);                                   // bearing-to-target
+    // heading arrow (yaw in ground plane)
+    const yr=m.yaw*Math.PI/180, hp=[m.h0+0.45*Math.cos(yr),m.h1+0.45*Math.sin(yr),m.alt];
+    line(bp,P(hp),'#ffd166',3);dot(P(hp),3,'#ffd166');
+    dot(bp,11,'#1f6feb');dot(bp,6,'#9fd0ff');
+  }
+  requestAnimationFrame(draw);
+}
+requestAnimationFrame(draw);
+
+async function post(o){try{await fetch('/api',{method:'POST',body:JSON.stringify(o)});}catch(e){}}
+function setUp(a){up=a;post({action:'upaxis',axis:a});}
+function sendTarget(){post({action:'target',x:+tx.value,y:+ty.value,z:+tz.value,yaw:+tyaw.value});}
+function toggleFly(){post({action:'fly',on:!(state&&state.flying)});}
+function kill(){post({action:'kill'});}
+function resetGains(){post({action:'gains_reset'});gset=false;}
+window.addEventListener('blur',()=>post({action:'kill'}));
+
+let tset=false, gset=false;
+async function poll(){
+  try{
+    state=await (await fetch('/state')).json(); up=state.up_axis;
+    upY.className=up==='Y'?'on':'';upZ.className=up==='Z'?'on':'';
+    const tk=document.getElementById('track');tk.textContent=state.valid?'tracking':'no data';tk.className='pill '+(state.valid?'ok':'bad');
+    rate.textContent=state.rate+' Hz';bridge.textContent=state.bridge||'—';
+    rx.textContent=state.raw.x.toFixed(3);ry.textContent=state.raw.y.toFixed(3);rz.textContent=state.raw.z.toFixed(3);
+    alt.textContent=state.mapped.alt.toFixed(3);yaw.textContent=state.mapped.yaw.toFixed(0)+'°';
+    err.textContent=state.err||'';
+    const f=document.getElementById('fly');
+    f.textContent=state.flying?'❚❚ FLYING — click to stop':'▶ FLY (autonomous)';f.className=state.flying?'flying':'';
+    hudpos.textContent='x '+state.mapped.h0.toFixed(2)+'  y '+state.mapped.h1.toFixed(2);
+    hudalt.textContent=(state.valid?'alt '+state.mapped.alt.toFixed(2)+' m · yaw '+state.mapped.yaw.toFixed(0)+'°':'no track');
+    if(!tset){tx.value=state.target.x;ty.value=state.target.y;tz.value=state.target.z;tyaw.value=state.target.yaw;tset=true;}
+    if(!gset){for(const k in state.gains){const s=document.getElementById('gs_'+k),v=document.getElementById('gv_'+k);if(s){s.value=state.gains[k];v.textContent=state.gains[k];}}gset=true;}
+    const dx=state.target.x-state.mapped.h0,dy=state.target.y-state.mapped.h1;
+    document.getElementById('dist').textContent=state.valid?Math.hypot(dx,dy).toFixed(2)+' m':'—';
+  }catch(e){}
+  setTimeout(poll,60);
+}
+poll();
+</script>
+</body></html>

@@ -1,0 +1,15 @@
+# ESP-FLY CLONE board pin map — append to sdkconfig.defaults.esp32s3 before building
+# firmware for the cloned PCB. Matches PCB/SCHEMATIC_DESIGN.md §3.
+# (For the NEW boards only — do NOT flash to the original stock drone.)
+CONFIG_IDF_TARGET="esp32s3"
+CONFIG_MOTOR01_PIN=1
+CONFIG_MOTOR02_PIN=2
+CONFIG_MOTOR03_PIN=3
+CONFIG_MOTOR04_PIN=4
+CONFIG_I2C0_PIN_SDA=5
+CONFIG_I2C0_PIN_SCL=6
+CONFIG_MPU_PIN_INT=7
+CONFIG_ADC1_PIN=8
+CONFIG_LED_PIN_RED=9
+CONFIG_LED_PIN_GREEN=43
+CONFIG_LED_PIN_BLUE=44

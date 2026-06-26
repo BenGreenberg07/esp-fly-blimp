@@ -1,0 +1,84 @@
+WARNING: KICAD6_SYMBOL_DIR environment variable is missing, so the default KiCad symbol libraries won't be searched. @ [/Users/ben/Co-Create_ESP-FLY/Firmware/PCB/<frozen importlib._bootstrap_external>:759=>/Users/ben/Co-Create_ESP-FLY/Firmware/PCB/<frozen importlib._bootstrap>:491]
+WARNING: KICAD7_SYMBOL_DIR environment variable is missing, so the default KiCad symbol libraries won't be searched. @ [/Users/ben/Co-Create_ESP-FLY/Firmware/PCB/<frozen importlib._bootstrap_external>:759=>/Users/ben/Co-Create_ESP-FLY/Firmware/PCB/<frozen importlib._bootstrap>:491]
+WARNING: KICAD9_SYMBOL_DIR environment variable is missing, so the default KiCad symbol libraries won't be searched. @ [/Users/ben/Co-Create_ESP-FLY/Firmware/PCB/<frozen importlib._bootstrap_external>:759=>/Users/ben/Co-Create_ESP-FLY/Firmware/PCB/<frozen importlib._bootstrap>:491]
+WARNING: KICAD_SYMBOL_DIR environment variable is missing, so the default KiCad symbol libraries won't be searched. @ [/Users/ben/Co-Create_ESP-FLY/Firmware/PCB/<frozen importlib._bootstrap_external>:759=>/Users/ben/Co-Create_ESP-FLY/Firmware/PCB/<frozen importlib._bootstrap>:491]
+WARNING: fp-lib-table file was not found. Component footprints are not available.
+WARNING: fp-lib-table file was not found. Component footprints are not available.
+WARNING: fp-lib-table file was not found. Component footprints are not available.
+WARNING: fp-lib-table file was not found. Component footprints are not available.
+WARNING: Missing tag on XIAO_ESP32S3 instantiated at /Users/ben/Co-Create_ESP-FLY/Firmware/PCB/gen_netlist.py:26.
+WARNING: Random tag P5xEzbrZ9p generated for XIAO_ESP32S3.
+WARNING: Missing tag on MPU-6050 instantiated at /Users/ben/Co-Create_ESP-FLY/Firmware/PCB/gen_netlist.py:35.
+WARNING: Random tag mdhrrjuA6G generated for MPU-6050.
+WARNING: Missing tag on R instantiated at /Users/ben/Co-Create_ESP-FLY/Firmware/PCB/gen_netlist.py:38.
+WARNING: Random tag YZ5qehW1_R generated for R.
+WARNING: Missing tag on R instantiated at /Users/ben/Co-Create_ESP-FLY/Firmware/PCB/gen_netlist.py:39.
+WARNING: Random tag JPAoYfFbkU generated for R.
+WARNING: Missing tag on C instantiated at /Users/ben/Co-Create_ESP-FLY/Firmware/PCB/gen_netlist.py:40.
+WARNING: Random tag pU99Z_YmDZ generated for C.
+WARNING: Missing tag on Q_NMOS_GSD instantiated at /Users/ben/Co-Create_ESP-FLY/Firmware/PCB/gen_netlist.py:44.
+WARNING: Random tag 1ipwoxBdDS generated for Q_NMOS_GSD.
+WARNING: Missing tag on R instantiated at /Users/ben/Co-Create_ESP-FLY/Firmware/PCB/gen_netlist.py:45.
+WARNING: Random tag sV2B1qXWxh generated for R.
+WARNING: Missing tag on R instantiated at /Users/ben/Co-Create_ESP-FLY/Firmware/PCB/gen_netlist.py:46.
+WARNING: Random tag 8XLAHaLhIh generated for R.
+WARNING: Missing tag on Conn_01x02_Pin instantiated at /Users/ben/Co-Create_ESP-FLY/Firmware/PCB/gen_netlist.py:47.
+WARNING: Random tag _g59zccyt0 generated for Conn_01x02_Pin.
+WARNING: Missing tag on Q_NMOS_GSD instantiated at /Users/ben/Co-Create_ESP-FLY/Firmware/PCB/gen_netlist.py:44.
+WARNING: Random tag Lm7yajV0Hs generated for Q_NMOS_GSD.
+WARNING: Missing tag on R instantiated at /Users/ben/Co-Create_ESP-FLY/Firmware/PCB/gen_netlist.py:45.
+WARNING: Random tag bbQugUiRRp generated for R.
+WARNING: Missing tag on R instantiated at /Users/ben/Co-Create_ESP-FLY/Firmware/PCB/gen_netlist.py:46.
+WARNING: Random tag MupQJMn4v6 generated for R.
+WARNING: Missing tag on Conn_01x02_Pin instantiated at /Users/ben/Co-Create_ESP-FLY/Firmware/PCB/gen_netlist.py:47.
+WARNING: Random tag Lg2HRAleaL generated for Conn_01x02_Pin.
+WARNING: Missing tag on Q_NMOS_GSD instantiated at /Users/ben/Co-Create_ESP-FLY/Firmware/PCB/gen_netlist.py:44.
+WARNING: Random tag 7FepyReId2 generated for Q_NMOS_GSD.
+WARNING: Missing tag on R instantiated at /Users/ben/Co-Create_ESP-FLY/Firmware/PCB/gen_netlist.py:45.
+WARNING: Random tag ItulH0Wnal generated for R.
+WARNING: Missing tag on R instantiated at /Users/ben/Co-Create_ESP-FLY/Firmware/PCB/gen_netlist.py:46.
+WARNING: Random tag 44K5Xh_KLz generated for R.
+WARNING: Missing tag on Conn_01x02_Pin instantiated at /Users/ben/Co-Create_ESP-FLY/Firmware/PCB/gen_netlist.py:47.
+WARNING: Random tag z2_ThFiNlo generated for Conn_01x02_Pin.
+WARNING: Missing tag on Q_NMOS_GSD instantiated at /Users/ben/Co-Create_ESP-FLY/Firmware/PCB/gen_netlist.py:44.
+WARNING: Random tag jL_wpaktmN generated for Q_NMOS_GSD.
+WARNING: Missing tag on R instantiated at /Users/ben/Co-Create_ESP-FLY/Firmware/PCB/gen_netlist.py:45.
+WARNING: Random tag HOR15ADieI generated for R.
+WARNING: Missing tag on R instantiated at /Users/ben/Co-Create_ESP-FLY/Firmware/PCB/gen_netlist.py:46.
+WARNING: Random tag TGjNjIN8MP generated for R.
+WARNING: Missing tag on Conn_01x02_Pin instantiated at /Users/ben/Co-Create_ESP-FLY/Firmware/PCB/gen_netlist.py:47.
+WARNING: Random tag LLhqdKQLpx generated for Conn_01x02_Pin.
+WARNING: Missing tag on C instantiated at /Users/ben/Co-Create_ESP-FLY/Firmware/PCB/gen_netlist.py:53.
+WARNING: Random tag vScUKG4LgJ generated for C.
+WARNING: Missing tag on C instantiated at /Users/ben/Co-Create_ESP-FLY/Firmware/PCB/gen_netlist.py:53.
+WARNING: Random tag sEFmhZxeox generated for C.
+WARNING: Missing tag on R instantiated at /Users/ben/Co-Create_ESP-FLY/Firmware/PCB/gen_netlist.py:56.
+WARNING: Random tag JXpUy9Ko5Q generated for R.
+WARNING: Missing tag on R instantiated at /Users/ben/Co-Create_ESP-FLY/Firmware/PCB/gen_netlist.py:57.
+WARNING: Random tag tnatWEznE8 generated for R.
+WARNING: Missing tag on Conn_01x02_Pin instantiated at /Users/ben/Co-Create_ESP-FLY/Firmware/PCB/gen_netlist.py:60.
+WARNING: Random tag uMWO4IS0ks generated for Conn_01x02_Pin.
+WARNING: Missing tag on LED instantiated at /Users/ben/Co-Create_ESP-FLY/Firmware/PCB/gen_netlist.py:65.
+WARNING: Random tag Q9Kg0bEs9R generated for LED.
+WARNING: Missing tag on R instantiated at /Users/ben/Co-Create_ESP-FLY/Firmware/PCB/gen_netlist.py:66.
+WARNING: Random tag PY8ncUr8N2 generated for R.
+WARNING: Missing tag on LED instantiated at /Users/ben/Co-Create_ESP-FLY/Firmware/PCB/gen_netlist.py:65.
+WARNING: Random tag O2F9SoL7Km generated for LED.
+WARNING: Missing tag on R instantiated at /Users/ben/Co-Create_ESP-FLY/Firmware/PCB/gen_netlist.py:66.
+WARNING: Random tag OFKz32IA0m generated for R.
+WARNING: Missing tag on LED instantiated at /Users/ben/Co-Create_ESP-FLY/Firmware/PCB/gen_netlist.py:65.
+WARNING: Random tag _zx4SbTfwn generated for LED.
+WARNING: Missing tag on R instantiated at /Users/ben/Co-Create_ESP-FLY/Firmware/PCB/gen_netlist.py:66.
+WARNING: Random tag btnoHlWgLp generated for R.
+WARNING: Missing tag on LED instantiated at /Users/ben/Co-Create_ESP-FLY/Firmware/PCB/gen_netlist.py:70.
+WARNING: Random tag tUvggheSIV generated for LED.
+WARNING: Missing tag on R instantiated at /Users/ben/Co-Create_ESP-FLY/Firmware/PCB/gen_netlist.py:71.
+WARNING: Random tag z0BOwx1SAX generated for R.
+WARNING: Missing tag on LED instantiated at /Users/ben/Co-Create_ESP-FLY/Firmware/PCB/gen_netlist.py:70.
+WARNING: Random tag Km0jgRGJxl generated for LED.
+WARNING: Missing tag on R instantiated at /Users/ben/Co-Create_ESP-FLY/Firmware/PCB/gen_netlist.py:71.
+WARNING: Random tag 03gIEQxN7Y generated for R.
+WARNING: Missing tag on  instantiated at /Users/ben/Co-Create_ESP-FLY/Firmware/PCB/<frozen importlib._bootstrap>:491.
+INFO: 77 warnings found while generating netlist.
+INFO: 0 errors found while generating netlist.
+

@@ -1,0 +1,17 @@
+Comment,Designator,Footprint,LCSC Part #,Notes
+SI2302 N-MOSFET,"Q1,Q2,Q3,Q4",SOT-23,C10487,motor low-side drivers
+MPU-6050,U2,QFN-24-4x4,C24112,IMU (I2C addr 0x68)
+22uF 10V,"C1,C2",C_0805,C45783,VBAT bulk
+100nF,C3,C_0402,C1525,IMU decoupling
+10k,"R1,R2",R_0402,C25744,I2C SDA/SCL pullups
+10k,"R3,R4,R5,R6",R_0402,C25744,MOSFET gate pulldowns
+100R,"R7,R8,R9,R10",R_0402,C25076,MOSFET gate series
+100k,"R11,R12",R_0402,C25741,battery sense divider
+150R,"R13,R14,R15,R16,R17",R_0402,C25092,LED series resistors
+LED red,D1,LED_0402,,status
+LED green,D2,LED_0402,,status
+LED blue,D3,LED_0402,,status
+LED white,"D4,D5",LED_0603,,power indicators
+JST-PH 2.0 2P,J5,JST_PH_S2B,C173752,1S battery
+XIAO ESP32-S3,U1,XIAO-ESP32S3-SMD,,DNP - user solders module on top
+Motor pads,"J1,J2,J3,J4",SolderWirePad_1x02,,motors hand-soldered
