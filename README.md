@@ -68,6 +68,48 @@ lab network.
 
 ---
 
+## Wi-Fi mode (manual fallback & how to revert)
+
+ESP-NOW is the primary control link, but the drone **always also brings up its own
+Wi-Fi access point** — so Wi-Fi control is available at any time, with **no reflashing
+needed**. It's the simplest way to fly manually or fall back if the radio bridge isn't handy.
+
+**Connect to the blimp's Wi-Fi:**
+
+| Setting | Value |
+|---|---|
+| SSID | `ESP-DRONE_80B54EF11031` |
+| Password | `12345678` |
+| Control link (CRTP over UDP) | `udp://192.168.43.42:2390` |
+
+**Then fly over Wi-Fi** — join that network and use either:
+- **`BLIMP_PANEL.command`** — browser panel: manual drive + live tuning + telemetry, or
+- **`DRIVE_BLIMP.command`** (or `python drive_blimp.py`) — keyboard teleop: `W/S` forward, `A/D` turn, `Q/E` up/down, `Space` kill.
+
+**To make Wi-Fi the *only* radio** (fully disable ESP-NOW) — edit
+`esp-drone/components/core/crazyflie/modules/src/system.c`:
+
+```c
+#define ESPNOW_CONTROL_ENABLED 0   // 1 = ESP-NOW (default), 0 = Wi-Fi only
+#define BLE_CONTROL_ENABLED    0   // (BLE link, normally off)
+```
+
+then rebuild and flash the drone:
+
+```bash
+cd esp-drone
+idf.py set-target esp32s3     # first time only
+idf.py build flash            # add -p /dev/cu.usbmodemXXXX if needed
+```
+
+The active radio is chosen by the `*_CONTROL_ENABLED` defines in `system.c`; the Wi-Fi AP
+is the base layer that's always present, with ESP-NOW layered on top when enabled.
+
+> **Note:** macOS serial ports re-enumerate on reset — if a flash fails with *"No serial
+> data received"* or *"Resource busy"*, unplug/replug the USB cable and retry.
+
+---
+
 ## Repo layout
 
 ```
