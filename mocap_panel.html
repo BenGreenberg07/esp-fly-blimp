@@ -69,6 +69,13 @@
     <div class="hint">Lift the blimp — the raw axis that changes is UP.</div>
   </div>
 
+  <h2>Direction (recent)</h2>
+  <div class="card">
+    <div class="row mono" style="font-size:11px;margin:2px 0"><span class="axx">X</span><canvas id="spx" width="240" height="30" style="flex:1;margin-left:8px"></canvas></div>
+    <div class="row mono" style="font-size:11px;margin:2px 0"><span class="axy">Y</span><canvas id="spy" width="240" height="30" style="flex:1;margin-left:8px"></canvas></div>
+    <div class="row mono" style="font-size:11px;margin:2px 0"><span class="axz">Z</span><canvas id="spz" width="240" height="30" style="flex:1;margin-left:8px"></canvas></div>
+  </div>
+
   <h2>Target</h2>
   <div class="card">
     <div class="row"><label>X</label><input type="number" step="0.1" id="tx" oninput="sendTarget()"></div>
@@ -103,6 +110,7 @@ const GDEF=[
  ["fwdMaxN","Forward max",0,1,0.05,"Forward (drive)"],
  ["arriveR","Arrive radius (m)",0.05,1,0.05,"Forward (drive)"],
  ["headGate","Face gate (deg)",10,90,5,"Forward (drive)"],
+ ["kdFwd","Velocity damping (anti-overshoot)",0,4,0.05,"Forward (drive)"],
  ["fwdMaxPwm","Fwd power cap",0,40000,1000,"Output power caps"],
  ["turnMaxPwm","Turn power cap",0,20000,500,"Output power caps"],
  ["vertMaxPwm","Vert power cap",0,32000,1000,"Output power caps"],
@@ -138,7 +146,8 @@ function proj(x,y,z){
   const a=g0*Math.cos(az)-g1*Math.sin(az), b=g0*Math.sin(az)+g1*Math.cos(az);
   return [cv.clientWidth/2+a*scale, cv.clientHeight/2-(u*Math.cos(el)-b*Math.sin(el))*scale];
 }
-function P(p){return up==='Y'?proj(p[0],p[2],p[1]):proj(p[0],p[1],p[2]);}  // (h0,h1,alt)->screen
+const DISP_SX=-1;  // flip X in the 3D VIEW ONLY (align with lab); control unchanged
+function P(p){const x=DISP_SX*p[0];return up==='Y'?proj(x,p[2],p[1]):proj(x,p[1],p[2]);}  // (h0,h1,alt)->screen
 function line(p,q,col,w){ctx.strokeStyle=col;ctx.lineWidth=w||1;ctx.beginPath();ctx.moveTo(p[0],p[1]);ctx.lineTo(q[0],q[1]);ctx.stroke();}
 function dot(p,r,col){ctx.fillStyle=col;ctx.beginPath();ctx.arc(p[0],p[1],r,0,7);ctx.fill();}
 
@@ -192,6 +201,15 @@ function resetGains(){post({action:'gains_reset'});gset=false;}
 function preset(p){post({action:'preset',preset:p});gset=false;}
 window.addEventListener('blur',()=>post({action:'kill'}));
 
+const HIST={x:[],y:[],z:[]};
+function spark(id,arr,col){
+  const c=document.getElementById(id);if(!c)return;const g=c.getContext('2d');
+  g.clearRect(0,0,c.width,c.height);if(arr.length<2)return;
+  let mn=Math.min(...arr),mx=Math.max(...arr);if(mx-mn<0.2){const m=(mn+mx)/2;mn=m-0.1;mx=m+0.1;}
+  g.strokeStyle=col;g.lineWidth=1.5;g.beginPath();
+  arr.forEach((v,i)=>{const x=i/(arr.length-1)*c.width,y=c.height-((v-mn)/(mx-mn))*(c.height-4)-2;i?g.lineTo(x,y):g.moveTo(x,y);});
+  g.stroke();
+}
 let tset=false, gset=false;
 async function poll(){
   try{
@@ -210,6 +228,11 @@ async function poll(){
     if(!gset){for(const k in state.gains){const s=document.getElementById('gs_'+k),v=document.getElementById('gv_'+k);if(s){s.value=state.gains[k];v.textContent=state.gains[k];}}gset=true;}
     const dx=state.target.x-state.mapped.h0,dy=state.target.y-state.mapped.h1;
     document.getElementById('dist').textContent=state.valid?Math.hypot(dx,dy).toFixed(2)+' m':'—';
+    if(state.valid){
+      HIST.x.push(state.mapped.h0);HIST.y.push(state.mapped.h1);HIST.z.push(state.mapped.alt);
+      for(const k in HIST){if(HIST[k].length>120)HIST[k].shift();}
+      spark('spx',HIST.x,'#ff6b6b');spark('spy',HIST.y,'#6bff95');spark('spz',HIST.z,'#6ba8ff');
+    }
   }catch(e){}
   setTimeout(poll,60);
 }

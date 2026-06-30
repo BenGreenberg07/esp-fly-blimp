@@ -109,6 +109,16 @@ static float bc_kp_fwd   = 0.6f;     // (normalized fwd) per meter of range
 static float bc_fwdMaxN  = 1.0f;     // cap on normalized forward [0..1]
 static float bc_arriveR  = 0.25f;    // m: inside this, stop & hold target yaw
 static float bc_headGate  = 60.0f;   // deg: don't drive fwd if mis-pointed beyond
+static float bc_kdFwd     = 0.5f;    // VELOCITY DAMPING: (normalized fwd) per (m/s)
+                                     // of closing speed. The motors can't reverse to
+                                     // brake, so this eases off thrust as the blimp
+                                     // approaches fast -> it coasts to the mark
+                                     // instead of overshooting. Raise to stop sooner.
+
+// Horizontal velocity estimate, finite-differenced from successive mocap samples
+// (low-pass filtered) so we know the closing speed without the host sending it.
+static float s_velX = 0.0f, s_velY = 0.0f;
+static int64_t s_lastMocapUs = 0;
 
 // Output scaling (normalized command -> PWM counts)
 static float bc_fwdMaxPwm  = 18000.0f;  // forward full scale
@@ -142,6 +152,16 @@ bool blimpGuidanceAutoEnabled(void)
 
 void blimpGuidanceSetMocap(const float p[8])
 {
+  int64_t nowUs = esp_timer_get_time();          // estimate horizontal velocity
+  if (s_lastMocapUs > 0) {
+    float dt = (nowUs - s_lastMocapUs) * 1e-6f;
+    if (dt > 1e-3f && dt < 1.0f) {
+      const float a = 0.4f;                       // low-pass to tame mocap noise
+      s_velX = (1.0f - a) * s_velX + a * (p[0] - mc_cx) / dt;
+      s_velY = (1.0f - a) * s_velY + a * (p[1] - mc_cy) / dt;
+    }
+  }
+  s_lastMocapUs = nowUs;
   mc_cx = p[0]; mc_cy = p[1]; mc_cz = p[2]; mc_cyaw = p[3];
   mc_tx = p[4]; mc_ty = p[5]; mc_tz = p[6]; mc_tyaw = p[7];
   mc_seq++;            // bump freshness heartbeat (blimpGuidanceMocapFresh)
@@ -157,6 +177,7 @@ void blimpGuidanceSetGains(const float g[BLIMP_NUM_GAINS])
   bc_yawKpHead = g[5]; bc_yawRateMax = g[6]; bc_yawKpRate = g[7];
   bc_kp_fwd = g[8]; bc_fwdMaxN = g[9]; bc_arriveR = g[10]; bc_headGate = g[11];
   bc_fwdMaxPwm = g[12]; bc_turnMaxPwm = g[13]; bc_vertMaxPwm = g[14];
+  bc_kdFwd = g[15];
 }
 
 void blimpGuidanceClearAuto(void)
@@ -209,7 +230,9 @@ void blimpGuidanceUpdate(control_t *control, const state_t *state,
   if (!arrived) {
     float facing = cosf(yawErr);
     if (facing > cosf(bc_headGate * (float)M_PI / 180.0f) && facing > 0.0f) {
-      uFwd = bc_kp_fwd * range * facing;             // ease off as we mis-point
+      // closing speed = velocity component toward the target (+ = approaching)
+      float closing = (range > 1e-3f) ? (s_velX * dx + s_velY * dy) / range : 0.0f;
+      uFwd = bc_kp_fwd * range * facing - bc_kdFwd * closing;  // brake by easing off
       uFwd = constrain(uFwd, 0.0f, bc_fwdMaxN);
     }
   }
@@ -229,7 +252,7 @@ void blimpGuidanceUpdate(control_t *control, const state_t *state,
   float vLim = (bc_vertMaxPwm < 32767.0f) ? bc_vertMaxPwm : 32767.0f;
   control->thrust = uFwd  * bc_fwdMaxPwm;
   control->yaw    = (int16_t)constrain(uTurn * bc_turnMaxPwm, -32767.0f, 32767.0f);
-  control->pitch  = (int16_t)constrain(uVert,                 -vLim, vLim);
+  control->pitch  = (int16_t)constrain(-uVert,                -vLim, vLim);  // up/down hardware-swapped: flip vertical sign
   control->roll   = 0;
 
   // ---- Telemetry ----
@@ -263,6 +286,7 @@ PARAM_ADD(PARAM_FLOAT,  kpFwd,     &bc_kp_fwd)
 PARAM_ADD(PARAM_FLOAT,  fwdMaxN,   &bc_fwdMaxN)
 PARAM_ADD(PARAM_FLOAT,  arriveR,   &bc_arriveR)
 PARAM_ADD(PARAM_FLOAT,  headGate,  &bc_headGate)
+PARAM_ADD(PARAM_FLOAT,  kdFwd,     &bc_kdFwd)
 PARAM_ADD(PARAM_FLOAT,  fwdMaxPwm, &bc_fwdMaxPwm)
 PARAM_ADD(PARAM_FLOAT,  turnMaxPwm,&bc_turnMaxPwm)
 PARAM_ADD(PARAM_FLOAT,  vertMaxPwm,&bc_vertMaxPwm)

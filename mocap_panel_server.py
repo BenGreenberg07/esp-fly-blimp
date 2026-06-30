@@ -25,11 +25,29 @@ PORT = 8500
 GAIN_ORDER = ["kpZ", "kiZ", "kdZ", "zff", "iLimZ",
               "yawKpHead", "yawRateMax", "yawKpRate",
               "kpFwd", "fwdMaxN", "arriveR", "headGate",
-              "fwdMaxPwm", "turnMaxPwm", "vertMaxPwm"]
-GAIN_DEFAULTS = {"kpZ": 12000, "kiZ": 1500, "kdZ": 6000, "zff": 0, "iLimZ": 8000,
+              "fwdMaxPwm", "turnMaxPwm", "vertMaxPwm", "kdFwd"]
+GAIN_DEFAULTS = {"kpZ": 24000, "kiZ": 1500, "kdZ": 6000, "zff": 0, "iLimZ": 8000,
                  "yawKpHead": 25, "yawRateMax": 30, "yawKpRate": 0.02,
                  "kpFwd": 0.6, "fwdMaxN": 1.0, "arriveR": 0.25, "headGate": 60,
-                 "fwdMaxPwm": 18000, "turnMaxPwm": 9000, "vertMaxPwm": 16000}
+                 "fwdMaxPwm": 18000, "turnMaxPwm": 9000, "vertMaxPwm": 28000, "kdFwd": 0.5}
+
+CONFIG_FILE = os.path.join(DIR, "mocap_config.json")
+
+def load_gains():
+    g = dict(GAIN_DEFAULTS)
+    try:
+        saved = json.load(open(CONFIG_FILE))
+        g.update({k: float(v) for k, v in saved.items() if k in GAIN_DEFAULTS})
+        print("loaded tuning from %s" % CONFIG_FILE)
+    except Exception:
+        pass
+    return g
+
+def save_gains():
+    try:
+        json.dump(S["gains"], open(CONFIG_FILE, "w"), indent=2)
+    except Exception as e:
+        print("save failed:", e)
 
 lock = threading.Lock()
 S = {
@@ -39,17 +57,20 @@ S = {
     "flying": False,
     "rate": 0.0, "frames": 0,
     "bridge": "", "err": "",
-    "gains": dict(GAIN_DEFAULTS),
+    "gains": None,             # filled from saved config / defaults just below
     "gains_dirty": True,       # send once on connect, then on every change
 }
 RUNNING = True
+S["gains"] = load_gains()      # restore last-saved tuning (persists across reboots)
 
+
+YAW_SIGN = -1.0   # mocap heading handedness: pointing left was read as right; flip it
 
 def quat_yaw(q, up):
     qx, qy, qz, qw = q
     if up == "Y":   # heading about Y, ground plane X-Z
-        return math.atan2(2.0 * (qw * qy + qx * qz), 1.0 - 2.0 * (qy * qy + qz * qz))
-    return math.atan2(2.0 * (qw * qz + qx * qy), 1.0 - 2.0 * (qy * qy + qz * qz))
+        return YAW_SIGN * math.atan2(2.0 * (qw * qy + qx * qz), 1.0 - 2.0 * (qy * qy + qz * qz))
+    return YAW_SIGN * math.atan2(2.0 * (qw * qz + qx * qy), 1.0 - 2.0 * (qy * qy + qz * qz))
 
 
 def mapped():
@@ -132,7 +153,7 @@ def fly_thread(bridge_port):
                 dirty = S["gains_dirty"]; g = dict(S["gains"]); S["gains_dirty"] = False
             if dirty:
                 try:
-                    ser.write(b"\xA7" + struct.pack("<15f", *[float(g[k]) for k in GAIN_ORDER]))
+                    ser.write(b"\xA7" + struct.pack("<16f", *[float(g[k]) for k in GAIN_ORDER]))
                 except Exception as e:
                     with lock: S["err"] = "bridge gains: %s" % e
             h0, h1, alt, yaw, valid = mapped()
@@ -180,6 +201,8 @@ def handle(d):
                 S["gains"]["vertMaxPwm"] = GAIN_DEFAULTS["vertMaxPwm"]
                 S["gains"]["fwdMaxPwm"] = GAIN_DEFAULTS["fwdMaxPwm"]
                 S["gains_dirty"] = True
+    if a in ("gain", "gains_reset", "preset"):
+        save_gains()           # persist every tuning change to mocap_config.json
     return {"ok": True}
 
 
