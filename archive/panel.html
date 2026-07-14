@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ESP-FLY Control Panel</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family:-apple-system,Segoe UI,Roboto,sans-serif;
+         background:#0e1116; color:#e6edf3; padding:18px; }
+  h1 { font-size:20px; margin:0 0 4px; }
+  .sub { color:#8b949e; font-size:13px; margin-bottom:14px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr));
+          gap:14px; }
+  .card { background:#161b22; border:1px solid #30363d; border-radius:12px; padding:16px; }
+  .card h2 { font-size:14px; margin:0 0 12px; color:#9ad; text-transform:uppercase;
+             letter-spacing:.5px; }
+  button { font:inherit; border:0; border-radius:8px; padding:9px 14px; cursor:pointer;
+           background:#21262d; color:#e6edf3; border:1px solid #30363d; }
+  button:hover { background:#30363d; }
+  button.primary { background:#1f6feb; border-color:#1f6feb; color:#fff; }
+  button.kill { background:#da3633; border-color:#da3633; color:#fff; font-weight:700;
+                font-size:18px; padding:14px; width:100%; }
+  button:disabled { opacity:.4; cursor:not-allowed; }
+  .row { display:flex; align-items:center; gap:10px; margin:8px 0; flex-wrap:wrap; }
+  .pill { padding:3px 10px; border-radius:999px; font-size:12px; font-weight:600; }
+  .on { background:#238636; } .off { background:#6e2f2f; } .auto { background:#9e6a00; }
+  label { font-size:13px; color:#c9d1d9; display:flex; justify-content:space-between;
+          align-items:center; gap:8px; margin:9px 0; }
+  input[type=number] { width:90px; background:#0d1117; border:1px solid #30363d;
+                       color:#e6edf3; border-radius:6px; padding:5px; }
+  input[type=range] { flex:1; }
+  .bar { height:16px; background:#0d1117; border:1px solid #30363d; border-radius:8px;
+         overflow:hidden; }
+  .bar > div { height:100%; background:linear-gradient(90deg,#1f6feb,#2ea043); width:0%; }
+  kbd { background:#0d1117; border:1px solid #30363d; border-bottom-width:2px;
+        border-radius:5px; padding:1px 6px; font-size:12px; }
+  .muted { color:#8b949e; font-size:12px; }
+  .big { font-size:26px; font-weight:700; }
+  .warn { color:#e3b341; font-size:12px; margin-top:8px; }
+</style>
+</head>
+<body>
+  <h1>ESP-FLY Control Panel</h1>
+  <div class="sub">Be joined to the drone's Wi-Fi. <span id="err" style="color:#f85149"></span></div>
+
+  <div class="row">
+    <button id="connectBtn" class="primary">Connect</button>
+    <span id="statusPill" class="pill off">disconnected</span>
+  </div>
+
+  <div style="max-width:360px;margin:12px 0">
+    <div class="row" style="margin:0 0 4px">
+      <span class="muted">Battery</span>
+      <span id="vbat" class="big">--</span><span class="muted">V</span>
+      <span id="battPct" class="muted"></span>
+      <span id="battStatus" class="pill off" style="margin-left:auto">--</span>
+    </div>
+    <div class="bar"><div id="battBar"></div></div>
+  </div>
+  <div style="max-width:360px;margin:0 0 18px"><button id="killBtn" class="kill">■ KILL (Space)</button></div>
+
+  <div class="grid">
+
+    <div class="card">
+      <h2>Manual flight</h2>
+      <div class="row">
+        <button id="manualBtn">Enable keyboard control</button>
+        <span id="manualPill" class="pill off">off</span>
+      </div>
+      <div class="row">
+        <button id="takeoffBtn" class="primary">⬆ Take off (to hover thrust)</button>
+      </div>
+      <p class="muted">
+        <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> move &nbsp;
+        <kbd>Q</kbd> up &nbsp; <kbd>E</kbd> down &nbsp;
+        <kbd>←</kbd><kbd>→</kbd> yaw &nbsp; <kbd>Space</kbd> kill
+      </p>
+      <label>Throttle <span id="thrVal">0</span></label>
+      <div class="bar"><div id="thrBar"></div></div>
+      <div class="warn">Raise throttle gradually with Q. No altitude hold — it won't self-hover.</div>
+    </div>
+
+    <div class="card">
+      <h2>Autonomous hop</h2>
+      <p class="muted">Up → hover → down, using the settings on the right.</p>
+      <div class="row"><button id="autoBtn" class="primary">▶ Run up / hover / down</button></div>
+      <p class="muted">Phase: <span id="autoPhase">idle</span></p>
+      <div class="warn">Open-loop. Stand clear, finger on Space (abort).</div>
+    </div>
+
+    <div class="card">
+      <h2>Tuning &amp; settings</h2>
+      <label>Roll trim (°, +right) <input type="number" id="roll_trim" step="0.5"></label>
+      <input type="range" id="roll_trim_r" min="-15" max="15" step="0.5">
+      <label>Pitch trim (°, +fwd) <input type="number" id="pitch_trim" step="0.5"></label>
+      <input type="range" id="pitch_trim_r" min="-15" max="15" step="0.5">
+      <hr style="border-color:#30363d">
+      <label>Hover thrust <input type="number" id="thrust_hover" step="500"></label>
+      <label>Climb thrust <input type="number" id="thrust_climb" step="500"></label>
+      <label>Climb time (s) <input type="number" id="climb_time" step="0.1"></label>
+      <label>Hover time (s) <input type="number" id="hover_time" step="0.5"></label>
+      <label>Land time (s) <input type="number" id="land_time" step="0.1"></label>
+      <div class="row"><button id="saveBtn" class="primary">Save settings</button>
+        <span id="savedMsg" class="muted"></span></div>
+      <div class="warn">If it veers right going up, make roll trim negative (and vice-versa).</div>
+    </div>
+
+    <div class="card">
+      <h2>Telemetry</h2>
+      <p>Roll <b id="aRoll">0</b>°&nbsp; Pitch <b id="aPitch">0</b>°&nbsp; Yaw <b id="aYaw">0</b>°</p>
+      <p class="muted">Mode: <span id="mode">idle</span></p>
+    </div>
+
+  </div>
+
+<script>
+const TILT = 12, YAW = 90, THR_MAX = 55000;
+const THR_RATE = 700;     // throttle change per tick (~40ms) while Q/E held -> ~3s full range
+let manualOn = false, thr = 0, rampTarget = null;
+const held = {};
+function keyId(e){ return e.key.length === 1 ? e.key.toLowerCase() : e.key; }
+const SETTINGS = ["roll_trim","pitch_trim","thrust_hover","thrust_climb",
+                  "climb_time","hover_time","land_time"];
+
+async function api(obj){ try{
+  const r = await fetch("/api",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify(obj)}); return await r.json();
+}catch(e){ return {}; } }
+
+document.getElementById("connectBtn").onclick = async () => {
+  const connecting = document.getElementById("connectBtn").dataset.on === "1";
+  await api({action: connecting ? "disconnect" : "connect"});
+};
+document.getElementById("killBtn").onclick = kill;
+function kill(){ thr = 0; rampTarget = null; api({action:"kill"}); }
+
+document.getElementById("manualBtn").onclick = () => setManual(!manualOn);
+document.getElementById("autoBtn").onclick = () => api({action:"auto"});
+
+function setManual(on){
+  manualOn = on;
+  if(!on){ thr = 0; rampTarget = null; api({action:"kill"}); }
+  const p = document.getElementById("manualPill");
+  p.textContent = on ? "ON" : "off";
+  p.className = "pill " + (on ? "on" : "off");
+}
+// Take off: turn on manual control and smoothly ramp throttle up to hover thrust.
+document.getElementById("takeoffBtn").onclick = () => {
+  setManual(true);
+  rampTarget = parseInt(document.getElementById("thrust_hover").value) || 39000;
+};
+
+window.addEventListener("keydown", e => {
+  if(e.code === "Space"){ e.preventDefault(); kill(); return; }
+  if(!manualOn) return;
+  const id = keyId(e);
+  if(["w","a","s","d","q","e","ArrowLeft","ArrowRight"].includes(id)){
+    e.preventDefault();
+    held[id] = true;
+    if(id === "q" || id === "e") rampTarget = null;   // manual throttle cancels takeoff ramp
+  }
+});
+window.addEventListener("keyup", e => { delete held[keyId(e)]; });
+
+// 25 Hz manual stream: throttle now ramps continuously while Q/E are HELD.
+setInterval(() => {
+  if(!manualOn) return;
+  if(rampTarget !== null){                       // take-off auto ramp
+    if(thr < rampTarget) thr = Math.min(rampTarget, thr + THR_RATE);
+    else if(thr > rampTarget) thr = Math.max(rampTarget, thr - THR_RATE);
+    else rampTarget = null;
+  }
+  if(held["q"]) thr = Math.min(THR_MAX, thr + THR_RATE);   // hold to climb
+  if(held["e"]) thr = Math.max(0, thr - THR_RATE);         // hold to descend
+  const roll  = (held["d"]?TILT:0) + (held["a"]?-TILT:0);
+  const pitch = (held["w"]?TILT:0) + (held["s"]?-TILT:0);
+  const yaw   = (held["ArrowRight"]?YAW:0) + (held["ArrowLeft"]?-YAW:0);
+  api({action:"manual", roll, pitch, yaw, thr});
+}, 40);
+
+// Push current settings to the server (applies live AND saves to disk).
+let saveTimer = null;
+function flash(txt){ const m=document.getElementById("savedMsg");
+  m.textContent=txt; clearTimeout(m._t); m._t=setTimeout(()=>m.textContent="",1500); }
+async function pushSettings(){
+  const d = {action:"settings"};
+  SETTINGS.forEach(k => d[k] = parseFloat(document.getElementById(k).value));
+  await api(d); flash("saved ✓");
+}
+function autoSave(){ clearTimeout(saveTimer); saveTimer=setTimeout(pushSettings, 300); }
+
+// number <-> slider sync, and auto-save whenever any setting changes
+function bindPair(num, rng){
+  const n=document.getElementById(num), r=document.getElementById(rng);
+  if(r){ n.addEventListener("input",()=>r.value=n.value);
+         r.addEventListener("input",()=>n.value=r.value); }
+}
+bindPair("roll_trim","roll_trim_r"); bindPair("pitch_trim","pitch_trim_r");
+SETTINGS.forEach(k => document.getElementById(k).addEventListener("input", autoSave));
+["roll_trim_r","pitch_trim_r"].forEach(id =>
+  document.getElementById(id).addEventListener("input", autoSave));
+
+// Save button still works for an explicit, instant save.
+document.getElementById("saveBtn").onclick = pushSettings;
+
+// 1S LiPo battery status. Voltage sags hard under motor load, so we
+//  (1) SMOOTH the reading with a moving average (~2 s), and
+//  (2) only raise a real low-battery WARNING when the smoothed voltage stays
+//      low for a sustained period -- a momentary throttle dip shows a mild
+//      "under load" note instead of a false "charge now" alarm.
+const BATT_WIN = 10;        // samples averaged (~2 s at the 5 Hz poll rate)
+const SUSTAIN_MS = 2500;    // smoothed voltage must stay low this long to warn
+let battBuf = [], lowSince = null;
+const C_GREEN="#2ea043", C_GREEN2="#3fb950", C_AMBER="#d29922",
+      C_ORANGE="#db6d28", C_RED="#da3633", C_OFF="#6e2f2f";
+
+function updateBattery(v){
+  const vEl=document.getElementById("vbat"), pEl=document.getElementById("battPct"),
+        sEl=document.getElementById("battStatus"), bEl=document.getElementById("battBar");
+  if(!v){ battBuf=[]; lowSince=null; vEl.textContent="--"; pEl.textContent="";
+          sEl.textContent="--"; sEl.style.background=C_OFF; bEl.style.width="0%"; return; }
+
+  // (1) moving average
+  battBuf.push(v); if(battBuf.length > BATT_WIN) battBuf.shift();
+  const sm = battBuf.reduce((a,b)=>a+b,0)/battBuf.length;
+
+  // (2) sustained-low tracking
+  if(sm < 3.60){ if(lowSince===null) lowSince=Date.now(); } else lowSince=null;
+  const sustained = lowSince!==null && (Date.now()-lowSince) >= SUSTAIN_MS;
+
+  vEl.textContent = sm.toFixed(2);
+  const pct = Math.max(0, Math.min(100, Math.round((sm-3.3)/(4.2-3.3)*100)));
+  pEl.textContent = "(~"+pct+"%)";
+
+  let label, color;
+  if(sm >= 3.95){ label="Full";          color=C_GREEN; }
+  else if(sm >= 3.80){ label="Good";     color=C_GREEN; }
+  else if(sm >= 3.70){ label="OK";       color=C_GREEN2; }
+  else if(sm >= 3.60){ label="Getting low"; color=C_AMBER; }
+  else if(sm >= 3.50){ label = sustained ? "Land soon"    : "low (under load)"; color = sustained ? C_ORANGE : C_AMBER; }
+  else {              label = sustained ? "⚠ CHARGE NOW" : "dip (under load)"; color = sustained ? C_RED    : C_AMBER; }
+  sEl.textContent = label; sEl.style.background = color;
+  bEl.style.width = pct+"%"; bEl.style.background = color;
+}
+
+let settingsLoaded = false;
+async function poll(){
+  try{
+    const s = await (await fetch("/state")).json();
+    const conn = s.connected;
+    document.getElementById("connectBtn").textContent = conn||s.want_connect ? "Disconnect" : "Connect";
+    document.getElementById("connectBtn").dataset.on = (conn||s.want_connect) ? "1":"0";
+    const pill=document.getElementById("statusPill");
+    pill.textContent = conn ? (s.mode) : (s.want_connect?"connecting…":"disconnected");
+    pill.className = "pill " + (s.mode==="auto"?"auto":(conn?"on":"off"));
+    updateBattery(conn ? s.vbat : 0);
+    document.getElementById("err").textContent = s.error || "";
+    document.getElementById("mode").textContent = s.mode;
+    document.getElementById("aRoll").textContent = s.att.roll;
+    document.getElementById("aPitch").textContent = s.att.pitch;
+    document.getElementById("aYaw").textContent = s.att.yaw;
+    document.getElementById("autoPhase").textContent = s.mode==="auto" ? "running…" : "idle";
+    document.getElementById("thrVal").textContent = manualOn ? thr : (s.thr||0);
+    document.getElementById("thrBar").style.width = (100*(manualOn?thr:(s.thr||0))/THR_MAX)+"%";
+    if(!settingsLoaded){
+      SETTINGS.forEach(k => { const el=document.getElementById(k); if(el) el.value=s[k]; });
+      document.getElementById("roll_trim_r").value = s.roll_trim;
+      document.getElementById("pitch_trim_r").value = s.pitch_trim;
+      settingsLoaded = true;
+    }
+  }catch(e){}
+}
+setInterval(poll, 200); poll();
+</script>
+</body>
+</html>

@@ -1,0 +1,301 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Blimp Straight Panel</title>
+<style>
+  :root{color-scheme:dark}
+  *{box-sizing:border-box}
+  body{margin:0;background:#0b0f14;color:#e6edf3;font:13px/1.4 -apple-system,Segoe UI,Roboto,sans-serif;display:flex;height:100vh;overflow:hidden}
+  #view{flex:1;position:relative;background:radial-gradient(circle at 50% 40%,#11202e,#0b0f14 70%)}
+  canvas{display:block;width:100%;height:100%}
+  #hud{position:absolute;top:10px;left:12px;font-size:12px;color:#9fb2c4;pointer-events:none}
+  #hud b{color:#e6edf3}
+  #side{width:340px;padding:14px 16px;background:#11161d;overflow-y:auto;border-left:1px solid #20262e}
+  h1{font-size:15px;margin:0 0 12px}
+  h2{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#7d8da0;margin:14px 0 6px}
+  .card{background:#0b0f14;border:1px solid #232c36;border-radius:9px;padding:10px 12px;margin-bottom:10px}
+  .row{display:flex;justify-content:space-between;align-items:center;margin:4px 0;gap:8px}
+  .mono{font-family:ui-monospace,Menlo,monospace}
+  .big{font-size:22px;font-weight:600}
+  label{color:#8b98a8;font-size:12px}
+  input[type=number]{width:62px;background:#0b0f14;border:1px solid #2a323c;color:#e6edf3;border-radius:5px;padding:3px 5px;font-family:ui-monospace,monospace}
+  button{cursor:pointer;border:1px solid #2a323c;background:#1c232c;color:#e6edf3;border-radius:6px;padding:7px 10px;font-size:13px}
+  button:hover{background:#283039}
+  .seg{display:flex;gap:6px}.seg button.on{background:#1f6feb;border-color:#1f6feb}
+  .kk{padding:4px 8px;border:1px solid #2a3744;border-radius:5px;font:12px ui-monospace,monospace;background:transparent;transition:background .05s}
+  .kk.act{background:#1f6feb;border-color:#1f6feb}
+  #fly{width:100%;padding:12px;font-size:15px;font-weight:700;background:#238636;border-color:#238636;margin-bottom:8px;border-radius:8px}
+  #fly.flying{background:#1f6feb;border-color:#1f6feb}
+  #kill{width:100%;padding:12px;font-size:15px;font-weight:800;background:#da3633;border-color:#da3633;border-radius:8px;margin-bottom:8px}
+  #gobtn{width:100%;padding:11px;font-weight:700;border-radius:8px}
+  #gobtn.flying{background:#8957e5;border-color:#8957e5}
+  .pill{padding:1px 8px;border-radius:10px;font-size:11px}.ok{background:#1a7f37}.bad{background:#6e1517}.spin{background:#9e6a03}.brk{background:#8957e5}
+  .axx{color:#ff6b6b}.axy{color:#6bff95}.axz{color:#6ba8ff}
+  #err{color:#ffa198;font-size:12px;min-height:15px;margin-top:4px}
+  .hint{color:#6f7d8c;font-size:11px;margin-top:6px;line-height:1.5}
+</style></head>
+<body>
+<div id="view"><canvas id="c"></canvas>
+  <div id="hud"><b id="hudpos">—</b><br><span id="hudalt"></span></div>
+  <div style="position:absolute;bottom:8px;left:12px;font-size:11px;color:#5d6a78">drag rotate · scroll zoom · 🟠 target · 🟣 goal marker</div>
+</div>
+
+<div id="side">
+  <h1>🎈 Blimp Straight Panel</h1>
+
+  <div class="card">
+    <div class="row"><label>Blimp tracking</label><span id="track" class="pill bad">no data</span></div>
+    <div class="row"><label>Goal marker (502)</label><span id="goalpill" class="pill bad">not seen</span></div>
+    <div class="row"><label>NatNet</label><span class="mono" id="rate">0 Hz</span></div>
+    <div class="row"><label>ESP-NOW bridge</label><span class="mono" id="bridge">—</span></div>
+  </div>
+
+  <div class="card">
+    <div class="row"><label><b>Frame profile</b> — match the physical build</label></div>
+    <div class="seg" style="margin-top:4px">
+      <button id="pfTilted" style="flex:1" onclick="setProfile('tilted')" title="front motors angled up — they help lift">↗ Tilted props</button>
+      <button id="pfStraight" style="flex:1" onclick="setProfile('straight')" title="front motors level — no lift from forward thrust">→ Straight props</button>
+    </div>
+    <div class="hint">Each frame keeps its OWN tuning (powers · hover · turn). Swap the physical frame, click the matching profile, and every slider loads that frame's saved values. Turn logic is identical for both; mainly the hover fwd-lift couple differs.</div>
+  </div>
+
+  <button id="fly" onclick="toggleFly()">▶ ARM (connect bridge)</button>
+  <button id="kill" onclick="kill()">■ KILL</button>
+  <div id="err"></div>
+
+  <h2>Autonomous — fly to the goal</h2>
+  <div class="card">
+    <button id="gobtn" onclick="toggleGoto()">▶ GO to goal</button>
+    <div class="row" style="margin-top:8px"><label>Target source</label>
+      <span class="seg"><button id="srcMarker" onclick="setSrc('marker')" title="chase the tracked goal marker live">🟣 Marker 502</button><button id="srcManual" onclick="setSrc('manual')">Manual X/Y</button></span></div>
+    <div class="row mono"><span>range to target</span><span id="grange" class="big">—</span></div>
+    <div class="row mono"><span>heading err</span><span id="herr" class="pill">—</span></div>
+    <div class="row mono"><span>yaw rate</span><span id="yrate">—</span></div>
+    <div class="row" id="mtgt" style="display:none"><label>X</label><input type="number" step="0.1" id="atx" oninput="setAtarget()"><label>Y</label><input type="number" step="0.1" id="aty" oninput="setAtarget()"></div>
+    <div class="row"><label>X error (m)</label></div><canvas id="spex" width="240" height="42" style="width:100%;height:42px"></canvas>
+    <div class="row"><label>Y error (m)</label></div><canvas id="spey" width="240" height="42" style="width:100%;height:42px"></canvas>
+    <button style="width:100%" onclick="saveGraph()">💾 Save graph (PNG)</button>
+    <div class="hint">Pure-pursuit: it steers toward the goal while always moving, so the PATH curves to the point (no rotate-in-place — a forward-only blimp can't). Steer D damps the yaw rate = auto counter-steer before overshoot. Hover holds the altitude it had at GO; forward-prop tilt-lift is subtracted while driving (couple).</div>
+  </div>
+
+  <h2>Auto tuning <span style="font-weight:400;color:#7d8da0">(live · saved)</span></h2>
+  <div class="card" id="accfg"></div>
+
+  <h2>Manual fly (when auto is off)</h2>
+  <div class="card">
+    <div class="row"><label>Manual teleop</label><span class="mono" id="manlvl">fwd 0%</span></div>
+    <div id="keys" style="display:flex;flex-wrap:wrap;gap:4px;margin:4px 0">
+      <span class="kk" id="kW">W&nbsp;fwd</span><span class="kk" id="kS">S&nbsp;brake</span>
+      <span class="kk" id="kA">A&nbsp;↺</span><span class="kk" id="kD">D&nbsp;↻</span>
+      <span class="kk" id="kQ">Q&nbsp;↑</span><span class="kk" id="kE">E&nbsp;↓</span>
+    </div>
+    <div class="hint">Hold <b>W</b> ramp fwd · <b>A/D</b> turn (works standing still too) · <b>Q/E</b> up/down · <b>S</b> brake · <b>Space</b> = KILL.</div>
+  </div>
+  <button id="straightbtn" style="width:100%" onclick="toggleStraight()">🧭 Straight-hold: ON</button>
+  <div class="card" style="margin-top:8px"><div class="row"><label>Manual yaw trim</label><span class="mono" id="mtval">0.00</span></div>
+    <input type="range" min="-0.5" max="0.5" step="0.01" value="0" id="mtrim" style="width:100%" oninput="setTrim(this.value)"></div>
+  <div class="card"><div class="row"><label>Max power</label><span class="mono" style="opacity:.6">per direction</span></div>
+    <div class="row"><label>Forward</label><input type="range" min="0" max="1" step="0.02" id="pw_fwd" oninput="setPow('fwd',this.value)" style="flex:1"><span class="mono" id="pv_fwd">—</span></div>
+    <div class="row"><label>Up</label><input type="range" min="0" max="1" step="0.02" id="pw_up" oninput="setPow('up',this.value)" style="flex:1"><span class="mono" id="pv_up">—</span></div>
+    <div class="row"><label>Down</label><input type="range" min="0" max="1" step="0.02" id="pw_down" oninput="setPow('down',this.value)" style="flex:1"><span class="mono" id="pv_down">—</span></div>
+    <div class="row"><label>Left turn</label><input type="range" min="0" max="1" step="0.02" id="pw_left" oninput="setPow('left',this.value)" style="flex:1"><span class="mono" id="pv_left">—</span></div>
+    <div class="row"><label>Right turn</label><input type="range" min="0" max="1" step="0.02" id="pw_right" oninput="setPow('right',this.value)" style="flex:1"><span class="mono" id="pv_right">—</span></div>
+  </div>
+  <button id="yawflip" style="width:100%" onclick="flipYaw()" title="If auto turns the wrong way / spins out, flip this">⟳ Flip turn direction (yaw sign: ?)</button>
+
+  <h2>Pose</h2>
+  <div class="card">
+    <div class="row mono"><span class="axx">X raw</span><span id="rx">0.000</span></div>
+    <div class="row mono"><span class="axy">Y raw</span><span id="ry">0.000</span></div>
+    <div class="row mono"><span class="axz">Z raw</span><span id="rz">0.000</span></div>
+    <div class="row"><label>Up axis</label>
+      <span class="seg"><button id="upY" onclick="setUp('Y')">Y</button><button id="upZ" onclick="setUp('Z')">Z</button></span></div>
+    <div class="row"><label>altitude</label><span class="mono big" id="alt">0.000</span></div>
+    <div class="row mono"><label>heading</label><span id="yaw">0°</span></div>
+  </div>
+</div>
+
+<script>
+// ---- auto-config sliders: [label, key, min, max, step] ----
+const ACFG=[
+ ["Cruise speed (m/s)","cruise",0,1,0.05],
+ ["Approach gain (decel)","approach",0,2,0.1],
+ ["Arrive radius (m)","arrive",0.05,1,0.05],
+ ["Min speed facing away","align_floor",0,0.6,0.02],
+ ["Steer P (→turn)","kp_head",0,2,0.05],
+ ["Steer D (anti-overshoot)","kd_head",0,0.05,0.002],
+ ["Turn cap","turn_cap",0,1,0.02],
+ ["Hover: buoyancy FF","z_ff",0,1,0.02],
+ ["Hover: alt P","z_kp",0,4,0.1],
+ ["Hover: alt D","z_kd",0,3,0.1],
+ ["Hover: cap","z_cap",0,1,0.05],
+ ["Hover: fwd-lift couple","z_fwd_couple",0,0.6,0.02],
+];
+(function(){const r=document.getElementById('accfg');ACFG.forEach(([lbl,k,mn,mx,st])=>{
+  const d=document.createElement('div');d.className='row';
+  d.innerHTML='<label>'+lbl+'</label><input type="range" min="'+mn+'" max="'+mx+'" step="'+st+'" id="ac_'+k+'" oninput="setAc(\''+k+'\',this.value)" style="flex:1"><span class="mono" id="acv_'+k+'">—</span>';
+  r.appendChild(d);});})();
+
+const cv=document.getElementById('c'), ctx=cv.getContext('2d');
+let az=0.7, el=0.5, scale=80, up='Z', dragging=false, lx=0, ly=0, state=null, trail=[];
+function rsz(){cv.width=cv.clientWidth*devicePixelRatio;cv.height=cv.clientHeight*devicePixelRatio;ctx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0);}
+window.addEventListener('resize',rsz); rsz();
+cv.addEventListener('mousedown',e=>{dragging=true;lx=e.clientX;ly=e.clientY});
+window.addEventListener('mouseup',()=>dragging=false);
+window.addEventListener('mousemove',e=>{if(!dragging)return;az+=(e.clientX-lx)*0.01;el=Math.max(-1.4,Math.min(1.4,el+(e.clientY-ly)*0.01));lx=e.clientX;ly=e.clientY});
+cv.addEventListener('wheel',e=>{e.preventDefault();scale=Math.max(25,Math.min(300,scale*(e.deltaY<0?1.1:0.9)))},{passive:false});
+
+function proj(x,y,z){
+  let g0,g1,u; if(up==='Y'){g0=x;g1=z;u=y;}else{g0=x;g1=y;u=z;}
+  const a=g0*Math.cos(az)-g1*Math.sin(az), b=g0*Math.sin(az)+g1*Math.cos(az);
+  return [cv.clientWidth/2+a*scale, cv.clientHeight/2-(u*Math.cos(el)-b*Math.sin(el))*scale];
+}
+function P(p){return up==='Y'?proj(p[1],p[2],p[0]):proj(p[1],p[0],p[2]);}  // X/Y swapped -> right-handed view (display only)
+function line(p,q,col,w){ctx.strokeStyle=col;ctx.lineWidth=w||1;ctx.beginPath();ctx.moveTo(p[0],p[1]);ctx.lineTo(q[0],q[1]);ctx.stroke();}
+function dot(p,r,col){ctx.fillStyle=col;ctx.beginPath();ctx.arc(p[0],p[1],r,0,7);ctx.fill();}
+
+function draw(){
+  ctx.clearRect(0,0,cv.clientWidth,cv.clientHeight);
+  ctx.globalAlpha=0.45;
+  for(let i=-3;i<=3;i++){line(P([i,-3,0]),P([i,3,0]),'#1b232c');line(P([-3,i,0]),P([3,i,0]),'#1b232c');}
+  ctx.globalAlpha=0.18;const H=2.2;
+  [[-3,-3],[3,-3],[3,3],[-3,3]].forEach(c=>line(P([c[0],c[1],0]),P([c[0],c[1],H]),'#3a4858',1));
+  ctx.globalAlpha=1;
+  line(P([0,0,0]),P([1.5,0,0]),'#ff6b6b',2);
+  line(P([0,0,0]),P([0,1.5,0]),'#6bff95',2);
+  line(P([0,0,0]),P([0,0,1.5]),'#6ba8ff',2);
+  ctx.font='12px ui-monospace';
+  ctx.fillStyle='#ff6b6b';ctx.fillText('X',...P([1.62,0,0]));
+  ctx.fillStyle='#6bff95';ctx.fillText('Y',...P([0,1.62,0]));
+  ctx.fillStyle='#6ba8ff';ctx.fillText('Z',...P([0,0,1.62]));
+  if(!state)return requestAnimationFrame(draw);
+  const t=state.target, m=state.mapped;
+  // goal marker (purple) when tracked
+  if(state.goal&&state.goal.valid){
+    const gp=P([state.goal.h0,state.goal.h1,state.goal.alt]);
+    ctx.globalAlpha=0.5;line(P([state.goal.h0,state.goal.h1,0]),gp,'#8957e5',1);ctx.globalAlpha=1;
+    dot(gp,7,'#8957e5');dot(gp,3,'#d2a8ff');
+  }
+  // target: stalk + ring + crosshair (orange)
+  const tp=P([t.x,t.y,t.z]);
+  ctx.globalAlpha=0.5;line(P([t.x,t.y,0]),tp,'#f0a020',1);ctx.globalAlpha=1;
+  ctx.strokeStyle='#f0a020';ctx.lineWidth=2;ctx.beginPath();ctx.arc(tp[0],tp[1],9,0,7);ctx.stroke();
+  line([tp[0]-13,tp[1]],[tp[0]+13,tp[1]],'#f0a020',1);line([tp[0],tp[1]-13],[tp[0],tp[1]+13],'#f0a020',1);
+  if(state.valid){
+    const b=[m.h0,m.h1,m.alt], bp=P(b), foot=P([m.h0,m.h1,0]);
+    trail.push(b);if(trail.length>140)trail.shift();
+    ctx.globalAlpha=0.35;ctx.strokeStyle='#58a6ff';ctx.lineWidth=1.5;ctx.beginPath();
+    trail.forEach((q,i)=>{const s=P(q);i?ctx.lineTo(s[0],s[1]):ctx.moveTo(s[0],s[1]);});ctx.stroke();ctx.globalAlpha=1;
+    ctx.globalAlpha=0.5;line(bp,foot,'#2a3744',1);ctx.globalAlpha=1;dot(foot,2,'#2a3744');
+    line(bp,tp,'#f0a020',1);
+    const yr=m.yaw*Math.PI/180, hp=[m.h0+0.45*Math.cos(yr),m.h1-0.45*Math.sin(yr),m.alt];
+    line(bp,P(hp),'#ffd166',3);dot(P(hp),3,'#ffd166');
+    dot(bp,11,'#1f6feb');dot(bp,6,'#9fd0ff');
+  }
+  requestAnimationFrame(draw);
+}
+requestAnimationFrame(draw);
+
+async function post(o){try{await fetch('/api',{method:'POST',body:JSON.stringify(o)});}catch(e){}}
+function setUp(a){up=a;post({action:'upaxis',axis:a});}
+function toggleFly(){post({action:'fly',on:!(state&&state.flying)});}
+function kill(){post({action:'kill'});}
+function toggleGoto(){post({action:'goto'});}
+function setSrc(s){post({action:'target_source',src:s});}
+function setProfile(name){post({action:'profile',name:name});}
+function flipYaw(){post({action:'yawsign'});}
+function toggleStraight(){post({action:'straight'});}
+function setTrim(v){document.getElementById('mtval').textContent=(+v).toFixed(2);post({action:'trim',value:+v});}
+function setPow(n,v){document.getElementById('pv_'+n).textContent=(+v).toFixed(2);post({action:'power',name:n,value:+v});}
+function setAc(n,v){document.getElementById('acv_'+n).textContent=(+v).toFixed(2);post({action:'acfg',name:n,value:+v});}
+function setAtarget(){post({action:'target',x:+document.getElementById('atx').value,y:+document.getElementById('aty').value});}
+window.addEventListener('blur',()=>post({action:'kill'}));
+
+function saveGraph(){
+  const w=620,h=340,c=document.createElement('canvas');c.width=w;c.height=h;const g=c.getContext('2d');
+  g.fillStyle='#0d1117';g.fillRect(0,0,w,h);g.font='12px monospace';
+  function plot(arr,y0,hh,col,lbl){
+    g.strokeStyle='#30363d';g.lineWidth=1;g.beginPath();g.moveTo(46,y0+hh/2);g.lineTo(w-10,y0+hh/2);g.stroke();
+    g.fillStyle='#8b949e';g.fillText(lbl,6,y0+14);
+    if(arr.length<2)return;
+    let mn=Math.min(...arr,-0.05),mx=Math.max(...arr,0.05);
+    g.strokeStyle=col;g.lineWidth=2;g.beginPath();
+    arr.forEach((v,i)=>{const x=46+i/(arr.length-1)*(w-56);const yy=y0+hh-((v-mn)/(mx-mn))*(hh-12)-6;i?g.lineTo(x,yy):g.moveTo(x,yy);});
+    g.stroke();g.fillStyle='#8b949e';g.fillText(mx.toFixed(2),6,y0+26);g.fillText(mn.toFixed(2),6,y0+hh-2);
+  }
+  plot(HIST.ex,12,150,'#ffb703','X error (m)');
+  plot(HIST.ey,175,150,'#8ecae6','Y error (m)');
+  const a=document.createElement('a');a.download='blimp_xy_error_'+Date.now()+'.png';a.href=c.toDataURL('image/png');a.click();
+}
+
+const KEYMAP={w:'W',s:'S',a:'A',d:'D',q:'Q',e:'E'};
+const curKeys={W:false,S:false,A:false,D:false,Q:false,E:false};
+function sendKeys(){post({action:'keys',keys:curKeys});}
+function isTyping(){const el=document.activeElement;return el&&(el.tagName==='INPUT'||el.tagName==='TEXTAREA');}
+window.addEventListener('keydown',e=>{
+  if(e.code==='Space'&&!isTyping()){e.preventDefault();kill();return;}
+  if(!state||state.auto_go||isTyping())return;   // keys drive manual only when auto is off
+  const k=KEYMAP[e.key.toLowerCase()];if(!k||curKeys[k])return;
+  curKeys[k]=true;sendKeys();
+});
+window.addEventListener('keyup',e=>{
+  const k=KEYMAP[e.key.toLowerCase()];if(!k||!curKeys[k])return;
+  curKeys[k]=false;sendKeys();
+});
+
+const HIST={ex:[],ey:[]};
+function spark(id,arr,col){
+  const c=document.getElementById(id);if(!c)return;const g=c.getContext('2d');
+  g.clearRect(0,0,c.width,c.height);if(arr.length<2)return;
+  let mn=Math.min(...arr),mx=Math.max(...arr);if(mx-mn<0.2){const m=(mn+mx)/2;mn=m-0.1;mx=m+0.1;}
+  g.strokeStyle=col;g.lineWidth=1.5;g.beginPath();
+  arr.forEach((v,i)=>{const x=i/(arr.length-1)*c.width,y=c.height-((v-mn)/(mx-mn))*(c.height-4)-2;i?g.lineTo(x,y):g.moveTo(x,y);});
+  g.stroke();
+}
+let mtset=false, pwset=false, atset=false, acset=false, lastProfile=null;
+async function poll(){
+  try{
+    state=await (await fetch('/state')).json(); up=state.up_axis;
+    upY.className=up==='Y'?'on':'';upZ.className=up==='Z'?'on':'';
+    const tk=document.getElementById('track');tk.textContent=state.valid?'tracking':'no data';tk.className='pill '+(state.valid?'ok':'bad');
+    const gk=document.getElementById('goalpill');gk.textContent=(state.goal&&state.goal.valid)?'tracked':'not seen';gk.className='pill '+((state.goal&&state.goal.valid)?'ok':'bad');
+    rate.textContent=state.rate+' Hz';bridge.textContent=state.bridge||'—';
+    rx.textContent=state.raw.x.toFixed(3);ry.textContent=state.raw.y.toFixed(3);rz.textContent=state.raw.z.toFixed(3);
+    alt.textContent=state.mapped.alt.toFixed(3);yaw.textContent=state.mapped.yaw.toFixed(0)+'°';
+    err.textContent=state.err||'';
+    const f=document.getElementById('fly');
+    f.textContent=state.flying?'❚❚ ARMED — click to disarm':'▶ ARM (connect bridge)';
+    f.className=state.flying?'flying':'';
+    document.getElementById('manlvl').textContent='fwd '+Math.round((state.fwd_level||0)*100)+'%';
+    document.getElementById('yawflip').textContent='⟳ Flip turn direction (yaw sign: '+((state.yaw_ctrl_sign||0)<0?'−':'+')+')';
+    document.getElementById('straightbtn').textContent='🧭 Straight-hold: '+(state.straight?'ON':'OFF')+(state.straight?(' · trim '+(state.yaw_trim||0).toFixed(3)):'');
+    const gb=document.getElementById('gobtn');
+    gb.textContent=state.auto_go?(state.auto_arrived?'✅ ARRIVED — click to stop':'■ STOP auto'):'▶ GO to goal';
+    gb.className=state.auto_go?'flying':'';
+    const hb=document.getElementById('herr');
+    if(hb){const he=state.herr; hb.textContent=(he!==undefined?he.toFixed(0)+'°':'—');
+      hb.className='pill '+(Math.abs(he||0)<15?'ok':(Math.abs(he||0)<50?'spin':'bad'));}
+    document.getElementById('yrate').textContent=(state.yawrate!==undefined?state.yawrate+' °/s':'—');
+    document.getElementById('srcMarker').className=state.target_source==='marker'?'on':'';
+    document.getElementById('srcManual').className=state.target_source==='manual'?'on':'';
+    document.getElementById('pfTilted').className=state.profile==='tilted'?'on':'';
+    document.getElementById('pfStraight').className=state.profile==='straight'?'on':'';
+    if(state.profile!==lastProfile){lastProfile=state.profile;pwset=false;acset=false;mtset=false;}  // switched frame -> reload sliders
+    document.getElementById('mtgt').style.display=state.target_source==='manual'?'':'none';
+    for(const k of ['W','S','A','D','Q','E']){const el=document.getElementById('k'+k);if(el)el.className='kk'+((state.keys&&state.keys[k])?' act':'');}
+    hudpos.textContent='x '+state.mapped.h0.toFixed(2)+'  y '+state.mapped.h1.toFixed(2);
+    hudalt.textContent=(state.valid?'alt '+state.mapped.alt.toFixed(2)+' m · yaw '+state.mapped.yaw.toFixed(0)+'°':'no track');
+    if(!mtset&&state.manual_trim!==undefined){const _mt=document.getElementById('mtrim');if(_mt){_mt.value=state.manual_trim;document.getElementById('mtval').textContent=(+state.manual_trim).toFixed(2);}mtset=true;}
+    if(!pwset&&state.powers){for(const n in state.powers){const s=document.getElementById('pw_'+n),v=document.getElementById('pv_'+n);if(s){s.value=state.powers[n];v.textContent=(+state.powers[n]).toFixed(2);}}pwset=true;}
+    if(!atset){atx.value=state.target.x;aty.value=state.target.y;atset=true;}
+    if(!acset&&state.acfg){for(const k in state.acfg){const s=document.getElementById('ac_'+k),v=document.getElementById('acv_'+k);if(s){s.value=state.acfg[k];v.textContent=(+state.acfg[k]).toFixed(2);}}acset=true;}
+    if(state.valid){
+      const _ex=state.target.x-state.mapped.h0,_ey=state.target.y-state.mapped.h1;
+      HIST.ex.push(_ex);HIST.ey.push(_ey);if(HIST.ex.length>150)HIST.ex.shift();if(HIST.ey.length>150)HIST.ey.shift();
+      spark('spex',HIST.ex,'#ffb703');spark('spey',HIST.ey,'#8ecae6');
+      document.getElementById('grange').textContent=Math.hypot(_ex,_ey).toFixed(2)+' m';
+    }
+  }catch(e){}
+  setTimeout(poll,60);
+}
+poll();
+</script>
+</body></html>

@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ESP-FLY Blimp Panel</title>
+<style>
+  :root { --bg:#11151c; --panel:#1b2230; --ink:#e6edf3; --mut:#8aa0b4; --acc:#4cc2ff; --warn:#ff5c5c; --ok:#43d17a; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:system-ui,Segoe UI,Roboto,sans-serif; background:var(--bg); color:var(--ink); }
+  header { display:flex; align-items:center; gap:12px; padding:12px 16px; background:var(--panel); position:sticky; top:0; }
+  header h1 { font-size:16px; margin:0; font-weight:600; }
+  .pill { font-size:12px; padding:3px 9px; border-radius:999px; background:#2a3342; color:var(--mut); }
+  .pill.on { background:rgba(67,209,122,.18); color:var(--ok); }
+  .pill.off { background:rgba(255,92,92,.16); color:var(--warn); }
+  main { display:grid; grid-template-columns:1fr 1fr; gap:14px; padding:16px; max-width:980px; margin:0 auto; }
+  .card { background:var(--panel); border-radius:12px; padding:14px 16px; }
+  .card h2 { font-size:13px; text-transform:uppercase; letter-spacing:.05em; color:var(--mut); margin:0 0 10px; }
+  button { font:inherit; color:var(--ink); background:#2a3342; border:1px solid #38445a; border-radius:8px; padding:8px 12px; cursor:pointer; }
+  button:hover { border-color:var(--acc); }
+  button.primary { background:var(--acc); color:#04263a; border:none; font-weight:600; }
+  button.kill { background:var(--warn); color:#2a0000; border:none; font-weight:700; width:100%; padding:14px; font-size:16px; }
+  .row { display:flex; align-items:center; gap:10px; margin:7px 0; }
+  .row label { flex:0 0 150px; font-size:13px; color:var(--mut); }
+  .row input[type=range] { flex:1; }
+  .row .val { flex:0 0 56px; text-align:right; font-variant-numeric:tabular-nums; font-size:13px; }
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:6px 16px; }
+  .tele { font-variant-numeric:tabular-nums; }
+  .tele b { color:var(--acc); }
+  .keys { display:grid; grid-template-columns:repeat(3,46px); gap:6px; justify-content:center; margin:6px 0; }
+  .keys div { text-align:center; padding:9px 0; border-radius:8px; background:#2a3342; font-weight:600; font-size:13px; color:var(--mut); }
+  .keys div.hit { background:var(--acc); color:#04263a; }
+  .hint { font-size:12px; color:var(--mut); line-height:1.5; }
+  .toggle { padding:6px 10px; font-size:13px; }
+  .toggle.on { background:rgba(76,194,255,.2); border-color:var(--acc); color:var(--acc); }
+</style>
+</head>
+<body>
+<header>
+  <h1>ESP-FLY Blimp</h1>
+  <span id="status" class="pill off">disconnected</span>
+  <span id="vbat" class="pill">— V</span>
+  <span style="flex:1"></span>
+  <button id="btnConn" class="primary" onclick="toggleConn()">Connect</button>
+</header>
+
+<main>
+  <!-- DRIVE -->
+  <section class="card">
+    <h2>Drive — click here, then use keys</h2>
+    <div class="keys">
+      <div></div><div data-k="W">W</div><div></div>
+      <div data-k="A">A</div><div data-k="S">S</div><div data-k="D">D</div>
+      <div data-k="Q">Q</div><div></div><div data-k="E">E</div>
+    </div>
+    <p class="hint">W hold = ramp forward · S = slow · A/D = turn · Q = up · E = down.
+      Click this page first so it gets keystrokes. Releasing focus cuts motors.</p>
+    <button class="kill" onclick="kill()">KILL (space)</button>
+  </section>
+
+  <!-- TELEMETRY -->
+  <section class="card tele">
+    <h2>Telemetry · IMU check</h2>
+    <div class="grid2">
+      <div>Battery: <b id="t_vbat">—</b> V</div>
+      <div>Forward level: <b id="t_lvl">—</b></div>
+      <div>Roll: <b id="t_roll">—</b>&deg;</div>
+      <div>Pitch: <b id="t_pitch">—</b>&deg;</div>
+      <div>Yaw: <b id="t_yaw">—</b>&deg;</div>
+      <div>Yaw RATE: <b id="t_rate">—</b>&deg;/s</div>
+    </div>
+    <p class="hint" style="margin:8px 0 2px">IMU working? Rotate the blimp by hand — "Yaw RATE" should swing.
+      With yaw-hold ON and driving forward, "yaw corr" reacts to that rate.</p>
+    <div class="grid2" style="margin-top:6px">
+      <div>out forward: <b id="o_fwd">0</b></div>
+      <div>out turn: <b id="o_turn">0</b></div>
+      <div>out vert: <b id="o_pitch">0</b></div>
+      <div>yaw corr: <b id="o_corr">0</b></div>
+    </div>
+  </section>
+
+  <!-- FRAME PROFILE -->
+  <section class="card">
+    <h2>Frame profile — match the mounted front motors</h2>
+    <div style="display:flex;gap:6px">
+      <button id="pf_tilted_up" class="toggle" style="flex:1" onclick="setProfile('tilted_up')">↗ Tilted up</button>
+      <button id="pf_tilted_down" class="toggle" style="flex:1" onclick="setProfile('tilted_down')">↘ Tilted down</button>
+      <button id="pf_straight" class="toggle" style="flex:1" onclick="setProfile('straight')">→ Straight</button>
+    </div>
+    <p class="hint">Each frame keeps its own tuning. Swap the physical frame, click the matching profile, and every slider/toggle below loads that frame's saved values. Tuning <b>auto-saves</b> — no save button.</p>
+  </section>
+
+  <!-- POWER -->
+  <section class="card">
+    <h2>Motor power</h2>
+    <div id="sliders_power"></div>
+  </section>
+
+  <!-- ALTITUDE HOLD -->
+  <section class="card">
+    <h2>Altitude hold — set it once, then forget it</h2>
+    <div class="row">
+      <label>Hold altitude</label>
+      <button id="tg_holdalt" class="toggle" onclick="toggleHoldAlt()">OFF</button>
+    </div>
+    <div id="sliders_alt"></div>
+    <p class="hint">Toggle ON, then nudge "Hold power" until it holds height by feel —
+      that's your neutral-buoyancy trim. It streams that constant vertical thrust
+      continuously (the "upward motor always on" idea) so you can stop thinking
+      about altitude and focus on tuning forward/turn below. Q/E still nudge on
+      top of the hold baseline if you need a temporary boost.</p>
+  </section>
+
+  <!-- COUNTER-SPIN -->
+  <section class="card">
+    <h2>Counter-spin — kill rotation on demand</h2>
+    <div class="row" style="gap:8px">
+      <button style="flex:1" onmousedown="counter(-1)">⟲ Counter CCW</button>
+      <button style="flex:1" onmousedown="counter(1)">⟳ Counter CW</button>
+    </div>
+    <div id="sliders_counter"></div>
+    <p class="hint">The blimp has no natural yaw damping and the props can't
+      reverse-brake, so a turn keeps coasting after you let go of A/D. The trick
+      that's worked best: turn, then a few seconds later — <b>before</b> it starts
+      overshooting — tap the opposite counter button to cancel the momentum
+      that's about to build, instead of waiting for it to overshoot and correcting
+      after the fact.</p>
+  </section>
+
+  <!-- DRIFT / TRIM + YAW-HOLD -->
+  <section class="card">
+    <h2>Drift trims &amp; stabilization</h2>
+    <div id="sliders_trim"></div>
+    <div class="row" style="margin-top:10px">
+      <label>IMU yaw-hold</label>
+      <button id="tg_yawhold" class="toggle" onclick="toggleTune('yawhold')">OFF</button>
+      <button id="tg_yawsign" class="toggle" onclick="flipTune('yawhold_sign')">dir +</button>
+    </div>
+    <div class="row">
+      <label>Vertical sign</label>
+      <button id="tg_vertsign" class="toggle" onclick="flipTune('vert_sign')">−1 (inverted)</button>
+    </div>
+    <p class="hint">Yaw-hold = auto-straighten while driving forward. If it makes the spin
+      worse, hit "dir". Strength = the "Yaw-hold str" slider. Vertical sign flips up/down.</p>
+  </section>
+
+  <!-- FIRMWARE MODE + SAVE -->
+  <section class="card">
+    <h2>Firmware mode &amp; config</h2>
+    <div>Configured mode: <b id="fw_mode" class="tele">—</b></div>
+    <div class="row" style="margin-top:10px">
+      <button class="toggle" onclick="flashMode('wifi')">Flash Wi-Fi mode</button>
+      <button class="toggle" onclick="flashMode('espnow')">Flash ESP-NOW mode</button>
+    </div>
+    <p class="hint" id="fw_status">Plug the drone into USB to flash (takes a few min).
+      Wi-Fi = this panel + drive_blimp. ESP-NOW = via the C6 bridge (panel can't
+      connect in that mode). Only one radio runs at a time.</p>
+    <p class="hint" style="margin-top:4px">✓ Tuning auto-saves per frame profile — no save button needed.</p>
+  </section>
+</main>
+
+<script>
+const POWER = [
+  {p:"up_power",   label:"Up motor",     min:0, max:1, step:0.01, pct:true},
+  {p:"down_power", label:"Down motor",   min:0, max:1, step:0.01, pct:true},
+  {p:"fwd_power",  label:"Forward",      min:0, max:1, step:0.01, pct:true},
+  {p:"fwd_ramp",   label:"Forward ramp (start/stop)", min:0.005, max:0.15, step:0.005},
+  {p:"turn_power", label:"Turn",         min:0, max:1, step:0.01, pct:true},
+];
+const ALT = [
+  {p:"hold_alt_power", label:"Hold power (+ up / − down)", min:-1, max:1, step:0.01},
+];
+const COUNTER = [
+  {p:"counter_power", label:"Counter power", min:0, max:1, step:0.02, pct:true},
+  {p:"counter_ms",     label:"Counter duration (ms)", min:100, max:1000, step:50},
+];
+const TRIM = [
+  {p:"yaw_trim",   label:"Yaw drift",    min:-0.3, max:0.3, step:0.005},
+  {p:"vert_trim",  label:"Vert drift",   min:-0.3, max:0.3, step:0.005},
+  {p:"couple",     label:"Anti-spin",    min:0, max:0.6, step:0.01},
+  {p:"yawhold_kp", label:"Yaw-hold str", min:0, max:0.05, step:0.001},
+];
+let connected = false;
+const keys = {W:false,S:false,A:false,D:false,Q:false,E:false};
+
+function post(body){ return fetch("/api",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)}); }
+function fmt(v,pct){ return pct ? Math.round(v*100)+"%" : (+v).toFixed(3); }
+
+function buildSliders(host, defs, state){
+  const el = document.getElementById(host);
+  el.innerHTML = "";
+  defs.forEach(d=>{
+    const v = (state[d.p] !== undefined) ? state[d.p] : d.min;
+    const row = document.createElement("div"); row.className="row";
+    row.innerHTML = `<label>${d.label}</label>
+      <input type=range min=${d.min} max=${d.max} step=${d.step} value=${v}>
+      <span class=val>${fmt(v,d.pct)}</span>`;
+    const inp = row.querySelector("input"), val = row.querySelector(".val");
+    inp.addEventListener("input", ()=>{ val.textContent=fmt(inp.value,d.pct); post({action:"tune",param:d.p,value:parseFloat(inp.value)}); });
+    el.appendChild(row);
+  });
+}
+
+function toggleConn(){ connected=!connected; post({action:connected?"connect":"disconnect"}); document.getElementById("btnConn").textContent=connected?"Disconnect":"Connect"; }
+function kill(){ post({action:"kill"}); for(const k in keys) keys[k]=false; sendKeys(); }
+function sendKeys(){ post(Object.assign({action:"keys"},keys)); paintKeys(); }
+function paintKeys(){ document.querySelectorAll(".keys [data-k]").forEach(d=>d.classList.toggle("hit",keys[d.dataset.k])); }
+
+let tuneState = {};
+function toggleTune(p){ tuneState[p] = (tuneState[p]>=0.5)?0:1; post({action:"tune",param:p,value:tuneState[p]}); paintToggles(); }
+function flipTune(p){ tuneState[p] = (tuneState[p]<0)?1:-1; post({action:"tune",param:p,value:tuneState[p]}); paintToggles(); }
+function paintToggles(){
+  const yh=document.getElementById("tg_yawhold"); const on=tuneState.yawhold>=0.5;
+  yh.textContent=on?"ON":"OFF"; yh.classList.toggle("on",on);
+  document.getElementById("tg_yawsign").textContent = "dir "+(tuneState.yawhold_sign<0?"−":"+");
+  document.getElementById("tg_vertsign").textContent = (tuneState.vert_sign<0?"−1 (inverted)":"+1 (normal)");
+  document.getElementById("tg_vertsign").classList.toggle("on",tuneState.vert_sign<0);
+}
+
+let holdAlt = false;
+function toggleHoldAlt(){
+  holdAlt = !holdAlt;
+  post({action:"hold_alt", on:holdAlt});
+  paintHoldAlt();
+}
+function paintHoldAlt(){
+  const b=document.getElementById("tg_holdalt");
+  b.textContent = holdAlt?"ON":"OFF"; b.classList.toggle("on",holdAlt);
+}
+function counter(sign){ post({action:"counter", sign:sign}); }
+
+function flashMode(m){
+  if(!confirm("Flash "+m.toUpperCase()+" firmware to the drone over USB?\nThe drone must be plugged in. Takes a few minutes.")) return;
+  post({action:"flash_mode", mode:m});
+}
+let curProfile=null;
+function setProfile(name){ post({action:"profile", name:name}); }
+function paintProfile(p){ for(const n of ["tilted_up","tilted_down","straight"]){ const b=document.getElementById("pf_"+n); if(b) b.classList.toggle("on", n===p); } }
+function applyProfile(s){
+  tuneState = Object.assign({}, s.tune);
+  buildSliders("sliders_power", POWER, s.tune);
+  buildSliders("sliders_alt", ALT, s.tune);
+  buildSliders("sliders_counter", COUNTER, s.tune);
+  buildSliders("sliders_trim", TRIM, s.tune);
+  paintToggles(); curProfile=s.profile; paintProfile(s.profile);
+}
+
+document.addEventListener("keydown",e=>{
+  if(e.code==="Space"){ e.preventDefault(); kill(); return; }
+  const k=(e.key||"").toUpperCase(); if(k in keys && !keys[k]){ keys[k]=true; sendKeys(); }
+});
+document.addEventListener("keyup",e=>{ const k=(e.key||"").toUpperCase(); if(k in keys){ keys[k]=false; sendKeys(); } });
+window.addEventListener("blur",()=>{ for(const k in keys) keys[k]=false; sendKeys(); });
+setInterval(()=>{ if(Object.values(keys).some(Boolean)) sendKeys(); }, 120); // heartbeat
+
+async function poll(){
+  try{
+    const s = await (await fetch("/state")).json();
+    connected = s.want_connect;
+    if(s.profile && s.profile!==curProfile){ applyProfile(s); }   // frame switched -> reload all sliders/toggles
+    const st=document.getElementById("status");
+    st.textContent = s.connected?"connected":(s.want_connect?"connecting…":(s.error?("err: "+s.error.slice(0,30)):"disconnected"));
+    st.className = "pill "+(s.connected?"on":"off");
+    document.getElementById("btnConn").textContent = s.want_connect?"Disconnect":"Connect";
+    document.getElementById("vbat").textContent = (s.vbat||0).toFixed(2)+" V";
+    document.getElementById("t_vbat").textContent=(s.vbat||0).toFixed(2);
+    document.getElementById("t_lvl").textContent=(s.fwd_level||0).toFixed(2);
+    document.getElementById("t_roll").textContent=s.att.roll;
+    document.getElementById("t_pitch").textContent=s.att.pitch;
+    document.getElementById("t_yaw").textContent=s.att.yaw;
+    document.getElementById("t_rate").textContent=s.yawrate;
+    document.getElementById("o_fwd").textContent=s.out.forward;
+    document.getElementById("o_turn").textContent=s.out.turn;
+    document.getElementById("o_pitch").textContent=s.out.pitch;
+    document.getElementById("o_corr").textContent=s.out.corr;
+    if(holdAlt !== s.hold_alt){ holdAlt = s.hold_alt; paintHoldAlt(); }  // server may reset on kill/disconnect/stale
+    document.getElementById("fw_mode").textContent=(s.mode||"—").toUpperCase();
+    const f=s.flash||{};
+    if(f.busy) document.getElementById("fw_status").textContent="⏳ building + flashing… keep this window open ("+(f.log||"")+")";
+    else if(f.ok===true) document.getElementById("fw_status").textContent="✅ "+(f.log||"done").slice(-160);
+    else if(f.ok===false) document.getElementById("fw_status").textContent="❌ "+(f.log||"failed").slice(-160);
+    else if(f.log) document.getElementById("fw_status").textContent=f.log;
+  }catch(e){}
+  setTimeout(poll, 200);
+}
+
+async function init(){
+  const s = await (await fetch("/state")).json();
+  applyProfile(s);
+  holdAlt = !!s.hold_alt; paintHoldAlt();
+  poll();
+}
+init();
+</script>
+</body>
+</html>

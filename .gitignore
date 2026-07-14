@@ -1,0 +1,11 @@
+build/
+.venv/
+__pycache__/
+*.bin
+cache/
+.DS_Store
+sdkconfig.old
+
+# machine-specific tuning + local-only tools
+*config*.json
+manual_panel_server.py
