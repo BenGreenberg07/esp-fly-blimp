@@ -201,6 +201,8 @@ bench-verified but **never flown**. See [Next steps](#next-steps--the-s-blimp-4-
 
 # Building a blimp from scratch
 
+My custom build guide video: [https://youtu.be/fltrr_Snbas](url)
+
 Start to finish, in the order you should actually do it.
 
 ### Step 1 — Parts
