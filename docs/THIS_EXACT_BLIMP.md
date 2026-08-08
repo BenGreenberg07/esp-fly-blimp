@@ -4,8 +4,24 @@ Notes for whoever inherits **the physical blimp and bridge I left behind** — t
 IDs, addresses, and settings that are already flashed and tuned, plus how to get it
 flying again from a cold start.
 
-If you're building a *new* blimp, you want the main [README](../README.md) instead. This
-page assumes the hardware on the shelf is the hardware I flew.
+> ### Which blimp this page is about
+>
+> This is the **original two-motor-forward blimp** — the one that actually flew, for
+> months, and the one everything in this repo is tuned for:
+>
+> **2 forward motors + 1 up + 1 down.** It steers by running the two forward motors at
+> different speeds, and holds altitude with the up/down pair.
+>
+> It is **not** the 4-motor "S-blimp" (all four motors pointing up, canted ~45°) that I
+> was starting to build at the end. That's a different airframe with a different
+> controller, it has **never been flown**, and nothing on this page applies to it. If you
+> have both on the shelf, this page is the one with **two horizontal props on the front**.
+>
+> Everything below assumes the standard build. If the drone was left on the experimental
+> firmware, `python flash.py drone` puts it back — see
+> [step 0](#0--make-sure-its-on-the-right-firmware) below.
+
+If you're building a *new* blimp, you want the main [README](../README.md) instead.
 
 ---
 
@@ -13,7 +29,7 @@ page assumes the hardware on the shelf is the hardware I flew.
 
 | Item | What it is |
 |---|---|
-| **The blimp** | XIAO ESP32-S3 flight board in a printed gondola, hanging under a mylar envelope. Four brushed motors: 2 forward, 1 up, 1 down. |
+| **The blimp** | XIAO ESP32-S3 flight board in a printed gondola, hanging under a mylar envelope. Four brushed motors in the standard layout: **2 facing forward** (side by side, canted up ~15°), **1 facing up**, **1 facing down**. |
 | **The bridge** | The one I used is a XIAO **ESP32-C6** on a short USB cable. **It has a u.FL external antenna — keep it attached.** The firmware drives the antenna switch high, so running it without the antenna is *worse* than a stock board, not neutral. (If you build a replacement, an ESP32-S3 works too — `python flash.py bridge`.) |
 | **A 1S LiPo** | Charge it. A tired battery is the single most common cause of "it flies badly today" — see the altitude note below. |
 
@@ -64,6 +80,23 @@ identify the boards if you have several.
 The drone also brings up its own access point, which you don't need for normal flying:
 SSID `ESP-DRONE_80B54EF11031`, password `12345678`, CRTP at `udp://192.168.43.42:2390`.
 
+### How this blimp flies (worth 30 seconds before you touch it)
+
+It is **not** a quadcopter and it does not behave like one:
+
+- **Turning is differential.** There is no yaw thruster — it turns by running one forward
+  motor harder than the other. So **every turn also pushes it forward**; it cannot spin
+  on the spot.
+- **It cannot brake.** The brushed motors only spin one direction, so it coasts. It
+  arrives at a point by curving onto it, not by stopping on it.
+- **Altitude is a separate pair** (the up and down motors) and is handled by its own PID,
+  independent of everything else.
+- **It's pendulum-stable.** The gondola hangs low, so it self-rights. There is no
+  attitude/tilt loop to tune — don't go looking for one.
+
+Minimum turn radius is about **1–1.25 m**, and radius grows with speed. That's the single
+most useful fact about flying it.
+
 ### Motors
 
 Channel → role, as flashed:
@@ -97,6 +130,21 @@ panel, which just flips that sign back.
 ---
 
 ## Getting it flying again, from cold
+
+### 0 — Make sure it's on the right firmware
+
+If nobody has touched it since I left, skip this; it's already flashed and paired. But if
+you're unsure — or someone tried the 4-motor experiment on it — put the standard build
+back before doing anything else:
+
+```bash
+python flash.py drone
+```
+
+That forces the `BLIMP_SWING` flag off and restores the normal two-forward-motor mixer
+and the on-board guidance. It is always safe to run.
+
+### Then, every time
 
 1. **Charge the LiPo.** Really.
 2. **Check the helium.** The envelope loses lift over days. It should be *very slightly*
@@ -183,6 +231,6 @@ is deliberately a software choice so wiring mistakes stay cheap.
 
 | Command | What it gives you |
 |---|---|
-| `python flash.py drone` | the normal flight firmware — **this is the one you want** |
+| `python flash.py drone` | the standard 2-forward-motor blimp firmware — **this is the one you want, and it's what this blimp should always be running** |
 | `python flash.py bridge --board c6` | reflashes **this** C6 radio bridge (use `--board s3` for an S3 one) |
-| `python flash.py swing` | switches the drone to the 4-motor S-blimp build (different airframe — don't use it on this vehicle) |
+| `python flash.py swing` | switches the drone to the experimental 4-motor S-blimp build. **Do not run this on this vehicle** — the mixer sends motor commands that assume four upward motors, so a 2-forward airframe will not fly. Recover with `python flash.py drone`. |
