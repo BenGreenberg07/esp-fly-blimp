@@ -228,8 +228,6 @@ In **`hardware/`**:
 | `s-blimp-frame-test2.stl` | the 4-motor S-blimp frame (next-gen, see below) |
 | `blimp-gondola-mount.f3d`, `esp-blimp-frame.f3d` | Fusion 360 sources, if you want to change dimensions |
 
-Print in PLA, no supports, low infill — every gram costs you helium.
-
 **Two geometry choices that matter more than any gain:**
 - **Spread the two forward motors as wide as you can.** Yaw torque scales with their
   separation, and turn authority is the single biggest limit on this vehicle.
