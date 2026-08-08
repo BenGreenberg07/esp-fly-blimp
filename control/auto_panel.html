@@ -60,12 +60,6 @@
   <button id="kill" onclick="kill()">■ KILL</button>
   <div id="err"></div>
 
-  <div class="seg" style="margin:8px 0">
-    <button style="flex:1" onclick="flashDrone()" title="Build + flash the drone firmware (whichever controller is selected) — opens a Terminal so you can watch">⚡ Flash drone (S3)</button>
-    <button style="flex:1" onclick="flashC6()" title="Compile + upload the C6 bridge — opens a Terminal so you can watch">⚡ Flash C6 bridge</button>
-  </div>
-  <div class="hint" style="margin-top:0">Flashing opens a Terminal window with live progress + a ✅/❌ confirmation. Plug in <b>only</b> the board you're flashing. Arming pauses automatically so the USB port is free. <b>One unified controller</b> — “Flash drone (S3)” builds and flashes it.</div>
-
   <h2>Autonomous — fly to the goal (on-board)</h2>
   <div class="card">
     <button id="gobtn" onclick="toggleGoto()">▶ GO to goal</button>
@@ -407,8 +401,6 @@ function saveRecCsv(){
 }
 function setProfile(name){post({action:'profile',name:name});}
 function flipYaw(){post({action:'yawsign'});}
-function flashDrone(){if(confirm('Flash the DRONE (ESP32-S3)?\n\nPlug ONLY the drone into USB. A Terminal window opens with live progress + confirmation. Arming will pause.'))post({action:'flash_drone'});}
-function flashC6(){if(confirm('Flash the C6 BRIDGE (XIAO ESP32-C6)?\n\nPlug ONLY the C6 into USB. A Terminal window opens with live progress + confirmation. Arming will pause.'))post({action:'flash_c6'});}
 function setTrim(v){document.getElementById('mtval').textContent=(+v).toFixed(2);post({action:'trim',value:+v});}
 function setPow(n,v){document.getElementById('pv_'+n).textContent=(+v).toFixed(2);post({action:'power',name:n,value:+v});}
 function fmtG(v){return Math.abs(v)>=100?Math.round(v).toString():(+v).toFixed(3);}

@@ -89,6 +89,29 @@ The panel opens in your browser. Press **ARM** to connect the USB bridge, then f
 **Nothing here needs a reflash.** Every gain is a live slider; the drone runs its own
 guidance and the panel just streams pose, commands, and tuning to it.
 
+## 5. Wait — what am I actually running?
+
+There are only **two scripts** in this repo, and you'll almost only ever use the first:
+
+| Script | When you use it |
+|---|---|
+| **`run.py`** | **Every time you fly.** Starts the ground station: a small local web server plus the browser page you actually click on. |
+| **`flash.py`** | **Rarely.** Only to put new firmware on a board. Not needed to fly, and not needed to change any gain. |
+
+The word "panel" just means that browser page — the thing with the live 3D view, the
+buttons, and the sliders. `--mode` picks which page you get (`auto`, `manual`, `wander`,
+`swing`); they're all served by the same program.
+
+**The controller is separate from the panel, and it isn't running on your laptop.** The
+control math — steering toward the target, holding altitude — lives in the drone's own
+firmware (`blimp_guidance.c`). Your laptop only tells it *where it is* and *where to go*,
+and passes along gain changes when you move a slider. That's why nothing needs reflashing
+when you tune, and why the path drawn on screen is a picture of what the drone is doing
+rather than the thing steering it.
+
+(The one exception is the experimental `swing` mode, where the controller does run on the
+laptop — explained in [Next steps](#next-steps--the-s-blimp-4-motor-airframe).)
+
 ---
 
 # Make it come back when you push it
@@ -211,7 +234,14 @@ idf.py build
 idf.py -p /dev/cu.usbmodemXXXX flash
 ```
 
-macOS users can just double-click **`FLASH_DRONE.command`** (auto-detects the port).
+Or let the helper script do all of that for you, on any OS:
+
+```bash
+python flash.py drone
+```
+
+It finds the port, sets up ESP-IDF if it isn't already on your PATH, and builds and
+flashes in one step.
 
 > **If flashing fails** with *"No serial data received"* or *"Invalid head of packet"*:
 > the S3 talks over its internal USB-Serial-JTAG. Add `--before usb_reset`, or unplug the
@@ -294,25 +324,6 @@ fresh clone starts from known-good numbers instead of defaults:
 **Radius scales with speed.** Flying wider circles than you drew is almost always
 `fwdMaxN` being too high, not a steering gain. Slowing down is the strongest lever.
 
----
-
-# The one idea that shapes everything: it's a *forward-only* vehicle
-
-A helium blimp is **buoyant** (it doesn't fight gravity) and **pendulum-stable** (the
-gondola hangs low, so it self-rights) — so the whole attitude/tilt PID cascade a quad
-needs is thrown away. The interesting constraint is the drivetrain:
-
-- **Two forward motors, one up, one down.** Steering is the *difference* between the two
-  forward motors — there is no dedicated yaw thruster.
-- **The brushed motors are unidirectional.** They can't reverse. So the craft **cannot
-  brake** and **cannot rotate in place**: any turn command also pushes it forward.
-
-Every control decision here follows from that. You don't fight the coupling — you design
-around it: constant cruise, plan curves instead of corners, and never ask for a turn
-tighter than the craft can hold (~1–1.25 m radius, measured).
-
----
-
 # Repo layout
 
 ```
@@ -389,7 +400,7 @@ vector pulls it along** (hence "swing blimp").
   channels to arms by clicking rather than resoldering.
 
 **What's left to do:**
-1. `FLASH_SWING.command` (drone only; `FLASH_DECOUPLED.command` puts the old blimp back).
+1. `python flash.py swing` (drone only; `python flash.py drone` puts the old blimp back).
 2. Props off — bench-test M1..M4 and set the motor map from what actually spins.
 3. Confirm the real cant matches a layout — watch which allocation row reads zero.
 4. Raise `hover` until it floats, then ENGAGE with the target at its current position.
@@ -461,7 +472,7 @@ python control/check_link.py --bridge-port COM5    # if auto-detect picks the wr
 | Symptom | Cause |
 |---|---|
 | Tracking pill never goes green | laptop isn't on the mocap network, or the wrong `body_id` |
-| Motors don't spin at all after flashing | you may have flashed the LED bench-test build — re-run `FLASH_DRONE.command`, which forces the flag off |
+| Motors don't spin at all after flashing | you may have flashed the LED bench-test build — re-run `python flash.py drone`, which forces the flag off |
 | Flies wider circles than drawn | `fwdMaxN` too high — slow it down |
 | Turns the wrong way | **⟳ Flip turn direction** in the panel |
 | Sinks during flight | buoyancy or battery sag, not gains — check `zff` isn't above `vertMaxPwm` |

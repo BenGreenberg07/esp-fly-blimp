@@ -16,7 +16,7 @@ MODES
   manual   hand-fly only, no autonomy                                       (port 8611)
   wander   flies to a point, parks, waits for a hand push, moves on         (port 8613)
   swing    4-motor S-blimp + Mellinger controller — UNTESTED, needs the
-           BLIMP_SWING firmware (see FLASH_SWING.command)                   (port 8620)
+           swing firmware first (`python flash.py swing`)                   (port 8620)
 """
 import json, os, sys
 

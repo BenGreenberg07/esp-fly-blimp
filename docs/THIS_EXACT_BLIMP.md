@@ -184,12 +184,12 @@ is deliberately a software choice so wiring mistakes stay cheap.
 
 | Command | What it gives you |
 |---|---|
-| `FLASH_DRONE.command` | the normal flight firmware — **this is the one you want** |
-| `FLASH_DECOUPLED.command` | explicitly restores this 2-forward-motor blimp build |
-| `FLASH_SWING.command` | switches the drone to the 4-motor S-blimp build (different airframe — don't use it on this vehicle) |
-| `FLASH_LED_TEST.command` | an LED bench test that **skips all flight code** |
+| `python flash.py drone` | the normal flight firmware — **this is the one you want** |
+| `python flash.py bridge` | reflashes the C6 radio bridge |
+| `python flash.py swing` | switches the drone to the 4-motor S-blimp build (different airframe — don't use it on this vehicle) |
+| `python flash.py led-test` | an LED bench test that **skips all flight code** |
 
 One trap worth repeating: the LED test build has no flight code at all, so if it's left
-on the board the motors simply never spin and it looks like dead hardware. The flight
-launchers now force that flag off themselves, so re-running `FLASH_DRONE.command` always
-gets you back to something flyable.
+on the board the motors simply never spin and it looks like dead hardware. `flash.py`
+forces that flag off for every flight build, so `python flash.py drone` always gets you
+back to something flyable.

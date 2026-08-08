@@ -1410,19 +1410,6 @@ def fly_thread(bridge_port):
             time.sleep(0.05)
 
 
-def _open_flash(script):
-    """Open a Terminal window running one of the flash launchers (macOS), so the
-    user watches the build/flash live and gets a pass/fail confirmation."""
-    path = os.path.abspath(os.path.join(DIR, "..", script))   # scripts live in Firmware/
-    if not os.path.exists(path):
-        with lock: S["err"] = "flash script missing: %s" % script
-        return
-    try:
-        subprocess.Popen(["open", "-a", "Terminal", path])
-    except Exception as e:
-        with lock: S["err"] = "flash launch failed: %s" % e
-
-
 # ============================ SYS-ID TEST SEQUENCES ============================
 # Two canned, LOGGED maneuvers for the plant fit, driven entirely through the
 # existing autonomous path (auto_go + streamed pose/gains). A background worker
@@ -2073,17 +2060,8 @@ def _start_test(kind):
 def handle(d):
     a = d.get("action")
     # Flashing shares the USB port, so drop the bridge link first, then open a
-    # Terminal to run the flasher (handled outside the state lock).
     if a == "test":
         _start_test(d.get("kind"))       # sys-ID: 'coast' | 'spin' | 'abort'
-        return {"ok": True}
-    if a in ("flash_drone", "flash_c6"):
-        with lock:
-            S["flying"] = False; S["auto_go"] = False
-            S["keys"] = {k: False for k in "WSADQE"}; S["fwd_level"] = 0.0
-        time.sleep(0.2)   # let fly_thread close the serial port
-        _open_flash({"flash_drone": "FLASH_DRONE.command",
-                     "flash_c6": "FLASH_C6.command"}[a])
         return {"ok": True}
     with lock:
         if a == "fly":
