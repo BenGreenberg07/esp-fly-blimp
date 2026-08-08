@@ -1,281 +1,145 @@
-# ESP-FLY — Project Notes & Documentation
+# Design notes
 
-_Last updated: 2026-06-18_
-
-This documents everything set up to control a Seeed **ESP-FLY** (XIAO ESP32-S3
-micro-drone) from a MacBook, plus the in-progress firmware changes to convert
-it from a quadcopter to a blimp.
+Why this thing is built the way it is. The [README](../README.md) covers how to run it;
+this covers the reasoning, the protocol internals, and the findings that took real flight
+time to learn.
 
 ---
 
-## 0. TL;DR — current state
+## 1. The architecture, and the problem it solves
 
-- **The physical drone's firmware was NOT modified.** It still runs the **stock
-  ESP-Drone quad firmware** it shipped with. Everything we use to fly it lives
-  on the Mac and talks to the drone over Wi-Fi.
-- **Blimp firmware changes exist only in source + a local build** (`build/ESPDrone.bin`).
-  They have **never been flashed** (no blimp hardware on hand yet).
-- Manual + autonomous flight and a web control panel all work over Wi-Fi.
-- Open bug: drone browns out / power-cycles under throttle → diagnosed as a
-  **battery/power issue**, not software (see §8).
+```
+OptiTrack ──Wi-Fi──▶ Laptop ──USB──▶ XIAO ESP32-C6 ──ESP-NOW──▶ ESP32-S3 (blimp)
+```
 
----
+The constraint that produced this shape: **a laptop has one Wi-Fi radio and can't be on
+two networks at once.** The mocap stream arrives over the lab network; the drone
+originally hosted its own access point. You could have one or the other, never both.
 
-## 1. Hardware
+Three fixes were tried before this one:
 
-| Item | Detail |
+- **Put the drone on the lab Wi-Fi.** Failed — the campus AP is MAC-locked and deauthed
+  the drone (`reason=2, AUTH_EXPIRE`) forever. Not fixable in firmware.
+- **BLE as a second link.** Failed. Wi-Fi AP + BLE running together browns out the
+  board — two 2.4 GHz radios exceed the power budget and the chip reboot-loops. Even
+  BLE-alone never held a connection. Parked; the code is still in `components/ble_control/`.
+- **ESP-NOW instead.** Works. It's connectionless, shares the one Wi-Fi radio (no
+  brownout), and needs no association — so the laptop stays on mocap and control rides a
+  USB-attached C6 bridge.
+
+One non-obvious trap: ESP-NOW must run **on top of** the existing Wi-Fi init, not instead
+of it. Skipping `wifiInit()` broke the boot entirely — it also creates the base
+netif/event-loop the rest of the firmware needs, so the flight loop never started.
+
+## 2. The wire protocol
+
+Frames carry a 4-byte magic tag and are dispatched on length:
+
+| Direction | Frame | Payload | Meaning |
+|---|---|---|---|
+| → drone | `0xA5` | 16 B | manual setpoint (4 × float32) |
+| → drone | `0xA6` | 32 B | mocap pose + goal (8 × float32) |
+| → drone | `0xA7` | 84 B | the live gain set |
+| ← laptop | `0xB7` | 16 B | motor telemetry (mL, mR, mUp, mDown) |
+
+**Why the magic tag exists** — and the single most expensive bug in this project. The
+receiver originally told frame types apart **by length alone**. The lab is full of other
+ESP-NOW devices, and their broadcasts happened to land in our length ranges: a foreign
+103-byte frame was parsed as a gain update, wrote garbage gains, produced NaNs, and
+panicked the drone about three seconds after power-up. Shorter foreign frames were parsed
+as mocap poses, so the guidance chased phantom positions and jittered.
+
+Every symptom seen that week — the ~3 s power-cycle, the jitter, "it flies to the wrong
+place" — was that one bug. `FRAME_MAGIC` (a 4-byte prefix both ends must agree on) fixed
+it and doubles as the pairing mechanism for flying several blimps in one room.
+
+> This is also why the "open brownout issue" that used to be documented here is gone.
+> It presented exactly like undervoltage — barely lifts, falls, power-cycles — but it was
+> the foreign-frame crash. Battery sag is still worth checking first on any new symptom,
+> but that specific fault was software.
+
+**A second silent failure worth recording:** `esp_now_send`'s peer `ifidx` must match the
+drone's actual Wi-Fi mode. Hard-coding `WIFI_IF_AP` while the drone ran in STA mode made
+every send return `ESP_ERR_ESPNOW_IF` — while *receive* kept working fine, so the link
+looked healthy and only the telemetry was missing. Query `esp_wifi_get_mode()` and pick
+accordingly.
+
+## 3. Where the control math runs, and why
+
+**On the drone.** The laptop streams pose and gains; `blimp_guidance.c` does pursuit
+steering, the altitude PID, soft-start, and the spin abort. Two reasons: the control loop
+shouldn't depend on Wi-Fi latency, and it means **every gain is tunable live** over the
+`0xA7` frame with no reflash — which is what made hundreds of tuning iterations practical.
+
+The exception is the swing/S-blimp build, where the controller runs host-side because
+Mellinger needs the full attitude quaternion every tick and the pose frame only carries
+position plus yaw. Growing the frame would force a reflash of *both* boards on every
+change, so there the drone is deliberately a dumb 4-channel amplifier.
+
+## 4. What the vehicle can and can't do
+
+The drivetrain is two unidirectional forward motors (steering is their difference), one
+up and one down. Consequences, all confirmed in flight:
+
+- **It cannot brake.** No reverse thrust, so it coasts. Arriving at a point means
+  planning the approach, not stopping at it.
+- **It cannot rotate in place.** Any turn command also pushes it forward — turning is an
+  arc, always.
+- **It drifts sideways through every turn.** Lateral velocity is generated by the turn
+  itself (`v̇ ≈ −(1/ρ)·u·r`) and decays with a ~6 s time constant, so the drift outlives
+  the corner that caused it.
+- **Minimum flyable turn radius is about 1–1.25 m.** Below that, tracking collapses into
+  loops. Paths are filleted so they never demand a tighter corner.
+- **Turn radius scales with speed.** Flying wider circles than commanded is nearly always
+  cruise being too high, not a steering gain.
+
+## 5. Control approaches tried
+
+| Approach | Outcome |
 |---|---|
-| Flight controller | Seeed XIAO **ESP32-S3** (dual-core, Wi-Fi) |
-| IMU | MPU-6050 (6-axis) |
-| Motors | 4 × 615 coreless brushed, via N-MOSFET drivers |
-| Battery | 1S LiPo 3.7 V, 250 mAh |
-| Firmware base | Espressif **ESP-Drone** (a Crazyflie port) |
-| Programming | USB-C (also charges the LiPo, ~100 mA) |
+| Decoupled PID (altitude / heading / forward) | Works. Still the basis of what flies. |
+| Rotate-first, then translate | Failed — fights a vehicle that can't rotate in place. |
+| Pulse-and-brake yaw (bang-bang, from hand-flying) | Worked manually, too brittle automatically. |
+| Pure pursuit with a lookahead carrot | **This is what's in use.** Constant cruise, steer at a point ahead, flow through corners instead of stopping at them. |
+| Model-predictive control (MPPI, then IPOPT/CasADi) | Excellent in simulation, poor in the room. Removed. |
+| Anticipatory curvature preview (slow before corners) | Helped in sim, not clearly in flight. Removed. |
 
----
+**Why MPC didn't survive.** Both solvers beat pursuit convincingly against the identified
+plant — and then tracked worse in the air. The honest reading is that the plant model was
+fitted from limited flight data (the yaw channel in particular was never cleanly
+identifiable), so the optimizer was solving the wrong problem very precisely. A controller
+that assumes less was more robust to that error than one that assumes more.
 
-## 2. How the Mac connects to the drone
+**Why the drift can't be cancelled.** To oppose sideways drift using only forward thrust,
+you must crab at an angle where `sin(β) = drift / forward`. Measured mount drift is
+~0.15 m/s and slow cruise is ~0.15 m/s, so that's a ~45° crab — marginal and unstable.
+Model-based feedforward was tested and *lost* to simple reactive crabbing. The real fixes
+are physical: centre the gondola under the envelope, spread the forward motors wider, or
+add H-bridges so the motors can reverse.
 
-The drone runs a **Wi-Fi Access Point**; no router involved. It speaks the
-Crazyflie protocol (**CRTP**) over **UDP**.
+## 6. Safety, learned by breaking things
 
-| Parameter | Value |
-|---|---|
-| Wi-Fi SSID | `ESP-DRONE_xxxxxxxxxxxx` (e.g. `ESP-DRONE_90706910AB79`) |
-| Wi-Fi password | `12345678` |
-| Drone IP (gateway) | `192.168.43.42` |
-| CRTP UDP port | **2390** |
-| Connection URI | `udp://192.168.43.42:2390` |
+- **Soft-start** ramps motors over ~0.7 s. Engaging all channels at once from zero drew
+  enough inrush to brown out the pack.
+- **Stale-pose failsafe** — if pose frames stop for `staleMs`, the drone zeroes the
+  motors and drops autonomy.
+- **Link-loss failsafe** at the packet layer (~250 ms) catches the bridge being unplugged.
+  An earlier idle "heartbeat" on the bridge actively defeated this and had to be removed:
+  it kept the drone's timeout from ever firing, which is a flyaway waiting to happen.
+- **Browser watchdog** — if the page stops polling for 1.5 s the server stops streaming.
+- **Differentiate against the mocap sample timestamp, never wall-clock.** A duplicated or
+  stale mocap sample divided by one loop tick produces a huge phantom velocity spike. That
+  single bug degraded MPC tracking, and independently made the wander mode's push detector
+  fire when nobody had touched the blimp.
 
-macOS reports "no internet / not associated" for this network — that's normal
-(the drone has no uplink); the link still works. Join it with the Wi-Fi menu, or:
-```
-networksetup -setairportnetwork en0 ESP-DRONE_90706910AB79 12345678
-```
+## 7. Wi-Fi / CRTP fallback
 
-### Three gotchas that had to be fixed for cflib 0.1.32 to talk to ESP-Drone
-All handled in **`cf_udp_patch.py`** (imported by every script):
-1. **URI needs the explicit port** `:2390` (newer cflib leaves it `None` otherwise).
-2. **Checksum framing.** ESP-Drone wraps every UDP packet with a trailing
-   checksum byte = `sum(all prior bytes) & 0xFF`. Stock cflib neither adds it on
-   send nor strips it on receive, so the link "connects" but every packet is
-   silently dropped. The patch appends it on send and strips it on receive.
-3. **Import path** is `cflib.crazyflie.syncLogger` (capital L).
+The drone still brings up its own AP, and the ESP-Drone CRTP-over-UDP path still works
+(`udp://192.168.43.42:2390`). Two things stock `cflib` gets wrong with this firmware:
 
----
+1. The port must be explicit in the URI — `udp://<ip>:2390`, not `udp://<ip>`.
+2. ESP-Drone appends a **trailing checksum byte** (`sum(bytes) & 0xFF`) to every UDP
+   packet, which stock cflib neither adds on send nor strips on receive. Without patching
+   that, the link connects and then silently drops every packet.
 
-## 3. Mac software setup (one-time, already done)
-
-A Python virtualenv lives at `Firmware/.venv` with the needed packages:
-```
-python3 -m venv .venv
-./.venv/bin/pip install cflib pynput        # cflib 0.1.32
-```
-All scripts are run with `./.venv/bin/python <script>` (the `.command` launchers
-do this for you).
-
-Note: Homebrew's Python 3.14 has **no Tkinter**, which is why the control panel
-is a local **web app** instead of a native window.
-
----
-
-## 4. Files created (all in `Firmware/`)
-
-| File | Purpose |
-|---|---|
-| `cf_udp_patch.py` | Makes cflib's UDP driver ESP-Drone-compatible (see §2). Imported by all. |
-| `flight_config.py` / `flight_config.json` | Shared settings: trim + auto-sequence params. All tools read/write it. |
-| `connect_test.py` | **Read-only** link test — no motors. Confirms link, params, battery, IMU stream. |
-| `quad_fly.py` | Manual keyboard flight (stock quad). WASD move, Q/E up-down, arrows yaw, Space kill. |
-| `auto_flight.py` | Autonomous hop: up → hover → down. Args override config (`--hover-time`, etc.). |
-| `control_server.py` | Backend for the web control panel; holds one cflib link, streams setpoints at 50 Hz. |
-| `panel.html` | The web UI (served by `control_server.py` at `http://127.0.0.1:8420`). |
-| `blimp_control.py` | For the BLIMP firmware only: `test` (ID motors), `demo`, `keys`. |
-| `1_TEST_CONNECTION.command` | Double-click → runs `connect_test.py`. |
-| `2_FLY_QUAD.command` | Double-click → manual flight. |
-| `3_AUTO_FLIGHT.command` | Double-click → autonomous hop. |
-| `4_CONTROL_PANEL.command` | Double-click → launches the web control panel + opens browser. |
-
----
-
-## 5. The control panel (`4_CONTROL_PANEL.command`)
-
-A local web page that drives everything:
-- **Connect / Disconnect**, link status, live **battery** + **attitude** telemetry.
-- **Manual flight:** enable keyboard control, then **WASD** = move,
-  **Q** = up / **E** = down (hold to ramp continuously), **←/→** = yaw.
-- **Take off** button: ramps throttle smoothly up to the hover-thrust setting.
-- **Autonomous hop** button: up → hover → down using current settings.
-- **Tuning & settings:** trim sliders + thrust/time inputs. **Auto-saves** the
-  moment you change them (applied live AND written to `flight_config.json`).
-- **KILL** (big red, or **Spacebar**): cuts motors instantly, always available.
-- Failsafe: if the browser stops sending (tab loses focus), throttle is cut
-  within 0.5 s.
-
-### Battery readout
-Reads firmware `pm.vbat`. It is **smoothed** (≈2 s moving average) and warnings
-require the voltage to stay low for **2.5 s** (so a momentary sag under throttle
-shows a calm "under load" note, not a false "charge now"). Voltage is
-ballpark-accurate (±~0.1 V); the "%" is a rough linear estimate. Read it at rest,
-on battery (not while charging on USB). Rule of thumb: ~4.2 V full, ~3.5 V land,
-~3.3 V empty.
-
----
-
-## 6. Trim (drift correction)
-
-`roll_trim` / `pitch_trim` (degrees) are added to every setpoint by all flight
-tools. Tune them with the panel's sliders (auto-saved). If it drifts **right**
-going up → roll trim **negative**; drifts **back** → pitch trim **positive**.
-
----
-
-## 7. Blimp firmware changes (BUILT, NOT YET FLASHED)
-
-Target: convert the quad to a blimp (2 forward motors, 1 up, 1 down). Source is
-in `Firmware/esp-drone`. Build target **must** be esp32s3
-(`idf.py set-target esp32s3` — the committed sdkconfig wrongly defaulted to esp32).
-
-Two files changed:
-- **`components/core/crazyflie/modules/src/power_distribution_stock.c`** —
-  replaced the quad mixer with a blimp mixer. `thrust`→forward, `yaw`→turn
-  (differential), `pitch`→vertical (+climb=up motor / −descend=down motor).
-  Motor roles map to channels via 4 editable `#define`s (`MOTOR_FWD_LEFT` etc.).
-- **`components/core/crazyflie/modules/src/stabilizer.c`** — bypasses the IMU
-  attitude PID and maps the raw operator setpoint straight to the motors (a
-  blimp is pendulum-stable from buoyancy and doesn't need self-leveling).
-
-Build (ESP-IDF v5.0.7 at `~/esp/esp-idf`):
-```
-cd ~/Co-Create_ESP-FLY/Firmware/esp-drone
-. ~/esp/esp-idf/export.sh
-idf.py set-target esp32s3      # once
-idf.py build
-idf.py -p /dev/cu.usbmodemXXXX flash
-```
-Revert to stock source: `git checkout Firmware/esp-drone` (then set-target again).
-
-To map blimp motors after flashing: run `blimp_control.py test` (spins each
-channel one at a time, props off), note which physical motor moves, set the four
-`#define`s, rebuild/flash.
-
----
-
-## 8. Known issue (open) — brownout under load
-
-Symptom: barely lifts, falls, then **power-cycles**; white LEDs flicker on
-battery but not on USB. Diagnosis: **undervoltage brownout** — the 1S sags under
-motor current until the ESP32 resets. This is a **power/battery issue, not
-software**. Actions: charge fully (~4.2 V) and retest; if a full pack still
-browns out, suspect a tired/under-rated battery or resistive solder/connector.
-Don't keep cycling or charging a swollen LiPo.
-
----
-
-## 9. Appendix: connection internals (the "fancy stuff")
-
-This is the deeper detail of how the Mac actually drives the drone, and the
-problems that had to be solved to make a modern `cflib` talk to ESP-Drone.
-
-### The protocol stack
-```
-  your script / browser
-        |  cf.commander.send_setpoint(roll, pitch, yaw, thrust)
-        v
-  cflib  (Crazyflie Python lib) ── builds a CRTP packet
-        |
-        v
-  CRTP over UDP  ── one UDP datagram per packet, to 192.168.43.42:2390
-        |   (+ our checksum patch)
-        v
-  Wi-Fi SoftAP on the drone (ESP32-S3)
-        |
-        v
-  ESP-Drone firmware: UDP task -> CRTP router -> commander -> stabilizer
-        |
-        v
-  motor mixer (power_distribution) -> MOSFETs -> motors
-```
-
-**CRTP** (Crazy RealTime Protocol) is Bitcraze's tiny packet format. Each packet
-is one header byte + up to 30 data bytes. The header encodes a **port**
-(which subsystem: commander, logging, params, …) and a **channel**. We mostly
-use the **commander port (0x03)**: a setpoint packet is
-`<float roll><float pitch><float yaw><uint16 thrust>` (little-endian), which is
-exactly what `send_setpoint(roll, pitch, yaw, thrust)` packs and ships ~50×/sec.
-
-### Transport: CRTP-over-UDP
-Normally a Crazyflie talks over a USB radio dongle. ESP-Drone instead carries
-the *same* CRTP packets inside **UDP datagrams** over its Wi-Fi AP. cflib has a
-`udp` link driver for this, selected by the `udp://host:port` URI. One datagram
-= one CRTP packet.
-
-### Why stock cflib couldn't talk to it (and the fix)
-Reading the two sides side by side revealed the mismatch:
-
-- **Firmware** (`esp-drone/components/drivers/general/wifi/wifi_esp32.c`): every
-  UDP packet is `[CRTP header][data...][checksum]`, where
-  `checksum = (sum of all preceding bytes) & 0xFF`. On receive it validates that
-  byte and drops the packet if it doesn't match; on send it appends one.
-- **cflib 0.1.32** (`cflib/crtp/udpdriver.py`): `send_packet()` sends
-  `[header][data...]` with **no checksum**, and the receive thread treats the
-  whole datagram as CRTP (it doesn't strip a checksum). So: socket opens fine,
-  handshake looks like it starts, but the drone rejects 100% of packets
-  (`udp packet cksum unmatched`) and nothing happens — a silent dead link.
-
-The fix lives in **`cf_udp_patch.py`**. Rather than fork cflib, it
-**monkey-patches** two methods at runtime (just `import cf_udp_patch` before
-`init_drivers()`):
-- `UdpDriver.send_packet` → rebuilds the byte tuple, appends `sum(...) & 0xFF`.
-- `_UdpReceiveThread.run` → strips the trailing checksum byte before handing the
-  packet to cflib.
-
-It also documents the other two snags: the URI **must** include `:2390` (newer
-cflib leaves the port `None` and crashes in `socket.connect`), and the logger
-import moved to `cflib.crazyflie.syncLogger` (capital L).
-
-### Telemetry (drone → Mac)
-On connect, the panel/`connect_test.py` ask the firmware for its **TOC** (table
-of contents) of log + param variables, then subscribe to a `LogConfig`
-(`stabilizer.roll/pitch/yaw`, `pm.vbat`) at 5 Hz. The drone streams those back as
-CRTP log packets, which is how the panel shows live attitude and battery.
-
-### Arming & the safety watchdog
-- ESP-Drone auto-arms (`ARM_INIT = true`); there's also a `system.forceArm`
-  param. The motor-ID `test` mode uses the `motorPowerSet` param override (drives
-  motors directly, bypassing the mixer — props off).
-- The firmware has a **commander watchdog**: if it stops receiving setpoints for
-  a short time it cuts the motors. That's why the scripts resend at ~50 Hz, and
-  why the panel cuts throttle within 0.5 s if the browser stops sending.
-
-### Joining the AP from the command line (and the macOS quirk)
-```
-networksetup -setairportnetwork en0 ESP-DRONE_90706910AB79 12345678
-```
-macOS shows the network as "not associated / no internet" because the drone has
-no uplink — but it *is* joined. Proof during setup: `ping 192.168.43.42`
-returned 0% packet loss even while the menu bar looked disconnected. Don't trust
-the menu bar here; trust the ping / the link status in the panel.
-
-### The local web-app architecture (control panel)
-Because Homebrew Python lacks Tkinter, the panel is a tiny **local HTTP server**
-(`control_server.py`, stdlib `http.server`) that:
-- holds the **single** cflib link in a background thread and streams setpoints at
-  50 Hz from a shared, lock-guarded state dict;
-- serves `panel.html` and a small JSON API (`/state`, `/api`) on
-  `127.0.0.1:8420`;
-- runs the autonomous sequence on a server-side timeline so it can't be
-  interrupted by browser hiccups, with the 0.5 s manual failsafe above.
-The browser is just a thin client (keyboard capture + fetch); all the real-time
-flying happens in the Python process.
-
----
-
-## 10. What's done vs. not
-
-**Done:** Mac↔drone link (with the cflib patch), manual flight, autonomous hop,
-web control panel, trim + persistence, battery smoothing, blimp firmware written
-and building.
-
-**Not done:** flashing blimp firmware (no blimp hardware yet), resolving the
-brownout (charging/battery test pending), tuning real-world hover/trim values.
+Both are handled in `archive/cf_udp_patch.py` if you ever go back to that path.
