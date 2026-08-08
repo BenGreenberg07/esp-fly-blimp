@@ -125,13 +125,8 @@ special mode — it is a direct consequence of the constant-cruise pursuit contr
 4. Leave **Loop** on. Press **▶ GO**.
 
 It climbs to the target altitude, flies to your point, and then keeps circling it at its
-minimum turn radius. Shove it across the room and the steering carrot is still that one
-point, so it banks around and comes back on a curve. Let go and it re-converges.
-
-Why a single point is sufficient: in path mode the controller always steers at a "carrot" running
-`lookahead` metres along the path ahead of it. With a single waypoint the carrot *is*
-that waypoint, permanently — so there is no state to reset and no way for a push to
-confuse it. That's it.
+minimum turn radius. Push it across the room and the steering carrot is still that one
+point, so it banks around and comes back on a curve. Release it and it re-converges.
 
 **It orbits rather than parks.** The forward motors run at constant cruise and can't
 reverse, so the craft cannot brake to a stop — expect a slow circle around the point,
@@ -139,6 +134,32 @@ not a hover on it. If you want it to genuinely stop, sit still, and wait to be p
 use the **wander** panel instead (`python run.py --mode wander`): it cuts cruise on
 arrival so the blimp coasts to a halt and is safe to grab, flashes the LED, waits for
 your push, then flies to the next point.
+
+### Suggested improvement: replace the constant cruise
+
+The clearest place to take this further is the constant-cruise assumption itself. The
+controller currently holds forward power fixed and only steers, which is what makes it
+smooth on loops — but it is also the reason it can only orbit a point instead of settling
+on it.
+
+Worth building and testing: **a speed controller that modulates forward thrust by distance
+to the target**, so the craft eases off as it approaches and coasts to a near-stop on the
+point rather than circling it. Some useful starting material is already here:
+
+- The **wander** mode already does a simple version — an approach taper that rolls cruise
+  off linearly over the last metre or two, plus a `fwdMaxN = 0` "park" state on arrival.
+  Generalising that into the main auto mode is the obvious first experiment.
+- `control/flight_logs/plant_final_*.json` is an identified model of the vehicle's
+  dynamics, so a stopping distance can be predicted rather than guessed. The craft coasts
+  a long way: forward drag has a time constant of roughly 5–7 seconds.
+
+Two things to expect. Because the motors cannot reverse, the approach has to be planned
+early — by the time it is close, cutting thrust is the only remaining control. And below
+roughly 0.15 m/s the constant sideways drift becomes comparable to the forward speed, so
+creeping in slowly tracks *worse*, not better. A decelerating approach that still arrives
+with some speed is likely the practical target. The complete fix is hardware: H-bridge
+drivers giving the motors reverse thrust, and therefore actual braking — see
+[Future additions](#future-additions).
 
 ---
 
