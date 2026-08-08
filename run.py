@@ -62,7 +62,6 @@ def main():
     argv = ["panel_server.py",
             "--server", str(cfg["motive_ip"]),
             "--body", str(cfg["body_id"]),
-            "--goal-body", str(cfg.get("goal_id", 502)),
             "--up", str(cfg.get("up", "Z")),
             "--port", str(port)]
     if mode == "manual":

@@ -14,7 +14,7 @@ page assumes the hardware on the shelf is the hardware I flew.
 | Item | What it is |
 |---|---|
 | **The blimp** | XIAO ESP32-S3 flight board in a printed gondola, hanging under a mylar envelope. Four brushed motors: 2 forward, 1 up, 1 down. |
-| **The bridge** | XIAO ESP32-C6 on a short USB cable. **It has a u.FL external antenna — keep it attached.** The firmware drives the antenna switch high, so running it without the antenna is *worse* than a stock board, not neutral. |
+| **The bridge** | The one I used is a XIAO **ESP32-C6** on a short USB cable. **It has a u.FL external antenna — keep it attached.** The firmware drives the antenna switch high, so running it without the antenna is *worse* than a stock board, not neutral. (If you build a replacement, an ESP32-S3 works too — `python flash.py bridge`.) |
 | **A 1S LiPo** | Charge it. A tired battery is the single most common cause of "it flies badly today" — see the altitude note below. |
 
 Both boards are already flashed and already paired. **You should not need to flash
@@ -30,7 +30,6 @@ anything to fly.**
 |---|---|
 | Motive PC IP | `192.168.0.4` |
 | Blimp rigid-body Streaming ID | **531** |
-| Goal-marker Streaming ID (optional) | **502** |
 | Up axis | **Z** (Motive is Z-up here) |
 | Typical stream rate | ~200 Hz |
 
@@ -185,11 +184,5 @@ is deliberately a software choice so wiring mistakes stay cheap.
 | Command | What it gives you |
 |---|---|
 | `python flash.py drone` | the normal flight firmware — **this is the one you want** |
-| `python flash.py bridge` | reflashes the C6 radio bridge |
+| `python flash.py bridge --board c6` | reflashes **this** C6 radio bridge (use `--board s3` for an S3 one) |
 | `python flash.py swing` | switches the drone to the 4-motor S-blimp build (different airframe — don't use it on this vehicle) |
-| `python flash.py led-test` | an LED bench test that **skips all flight code** |
-
-One trap worth repeating: the LED test build has no flight code at all, so if it's left
-on the board the motors simply never spin and it looks like dead hardware. `flash.py`
-forces that flag off for every flight build, so `python flash.py drone` always gets you
-back to something flyable.

@@ -38,7 +38,7 @@
 
 <div id="side">
   <h1>🕹️ Blimp Manual Panel</h1>
-  <div class="sub">Pure hand-flying, no autonomy/MPC/tests. Keyboard: W/S forward, A/D turn, Q/E up/down, Space = KILL.</div>
+  <div class="sub">Pure hand-flying, no autonomy. Keyboard or gamepad. Keyboard: W/S forward, A/D turn, Q/E up/down, Space = KILL.</div>
 
   <div class="card">
     <div class="row"><label>Blimp tracking</label><span id="track" class="pill bad">no data</span></div>
@@ -60,6 +60,12 @@
       <button id="hoverBtn" style="flex:1" onclick="post({action:'hover',on:!(state&&state.hover)})">⊙ Hover: off</button>
     </div>
     <div class="hint">Hover holds a baseline Up thrust so it floats while you hand-fly (tune with the Up slider below).</div>
+    <div class="row" style="margin-top:8px"><label>🎮 Gamepad</label><span class="pill" id="padpill">no pad</span></div>
+    <div class="hint"><b>Xbox / any USB or Bluetooth gamepad works</b> — proportional, unlike the on/off keys.
+      <b>RT</b> = forward throttle (half-squeeze = half power), <b>right stick X</b> = turn,
+      <b>left stick Y</b> = up/down, <b>B</b> = KILL. The keys keep working; the pad simply takes over
+      while it is being used. Browsers only reveal a gamepad after you press a button on it, so
+      "no pad" until first input is normal.</div>
   </div>
 
   <div class="card">
@@ -101,6 +107,37 @@ window.addEventListener('keyup',function(e){
   var k=KEYMAP[e.key.toLowerCase()];if(!k||!curKeys[k])return;
   curKeys[k]=false;sendKeys();
 });
+
+// ---- GAMEPAD (Xbox etc.) -> analog manual control ----------------------------
+//  RT (right trigger) = forward 0..1   |  right stick X = turn -1..1
+//  left stick Y       = up/down        |  B button      = KILL
+// Sent at ~25 Hz as the shared 'axes' action. The server ignores them the moment
+// they go stale (pad unplugged / tab backgrounded) and falls straight back to
+// W/S/A/D/Q/E, so an abandoned pad can never latch the motors on.
+const PAD_DEAD=0.12, PAD_HZ=25;
+function padAxis(v){return Math.abs(v)<PAD_DEAD?0:(v-Math.sign(v)*PAD_DEAD)/(1-PAD_DEAD);}
+let padWasB=false, padLastSent=0;
+function padPoll(){
+  if(!navigator.getGamepads)return;
+  const gp=[...navigator.getGamepads()].find(g=>g&&g.connected);
+  const st=document.getElementById('padpill');
+  if(!gp){ if(st){st.textContent='no pad';st.className='pill';} return; }
+  const b=gp.buttons[1]&&gp.buttons[1].pressed;     // B = KILL, edge-triggered
+  if(b&&!padWasB)post({action:'kill'});
+  padWasB=b;
+  const rt=gp.buttons[7]?gp.buttons[7].value:0;     // analog trigger 0..1
+  const fwd=rt<0.03?0:rt;
+  const turn=padAxis(gp.axes[2]||0);
+  const vert=-padAxis(gp.axes[1]||0);               // stick up = -1 -> climb
+  if(st){st.textContent='pad '+(fwd*100).toFixed(0)+'% t'+turn.toFixed(2)+' v'+vert.toFixed(2);
+         st.className='pill ok';}
+  const now=Date.now();
+  if(now-padLastSent<1000/PAD_HZ)return;
+  padLastSent=now;
+  post({action:'axes',fwd:fwd,turn:turn,vert:vert,name:(gp.id||'').slice(0,40)});
+}
+setInterval(padPoll,1000/PAD_HZ);
+window.addEventListener('gamepadconnected',e=>{console.log('gamepad:',e.gamepad.id);});
 
 var trimSet=false, powSet=false;
 async function poll(){try{ state=await (await fetch('/state')).json(); render(); }catch(e){}}

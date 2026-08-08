@@ -6,15 +6,15 @@ tuning happen in the panel (`python run.py`) and never require a flash.
 
 USAGE
   python flash.py drone      # normal flight firmware  <- the one you almost always want
-  python flash.py bridge     # the XIAO ESP32-C6 USB radio bridge
+  python flash.py bridge     # the USB radio bridge (XIAO ESP32-S3 by default)
   python flash.py swing      # the experimental 4-motor S-blimp build (UNTESTED)
-  python flash.py led-test   # LED bench test — NO flight code, motors will not spin
 
   --port /dev/cu.usbmodem101   pick the serial port yourself (default: autodetect)
+  --board s3 | c6              which board the BRIDGE is (default: s3)
 
 BEFORE YOU RUN IT
-  drone / swing / led-test  need ESP-IDF v5.0.x installed.
-  bridge                    needs arduino-cli with the esp32 core 3.x.
+  drone / swing  need ESP-IDF v5.0.x installed.
+  bridge         needs arduino-cli with the esp32 core 3.x.
 
   If `idf.py` isn't already on your PATH this script looks for ESP-IDF in $IDF_PATH,
   then ~/esp/esp-idf, and sets it up for you.
@@ -29,7 +29,9 @@ SWING_H = os.path.join(ESP_DRONE, "components", "core", "crazyflie",
                        "modules", "interface", "blimp_swing.h")
 MAIN_C = os.path.join(ESP_DRONE, "main", "main.c")
 BRIDGE_INO = os.path.join(HERE, "espnow_bridge", "espnow_bridge.ino")
-FQBN = "esp32:esp32:XIAO_ESP32C6"
+# The bridge sketch builds for either XIAO board; it guards the C6-only antenna
+# switch behind CONFIG_IDF_TARGET_ESP32C6, so the same source works on both.
+BRIDGE_FQBN = {"s3": "esp32:esp32:XIAO_ESP32S3", "c6": "esp32:esp32:XIAO_ESP32C6"}
 
 
 def find_port():
@@ -89,8 +91,10 @@ def run_idf(port):
 
 def main():
     ap = argparse.ArgumentParser(description="Flash the blimp's firmware.")
-    ap.add_argument("target", choices=["drone", "bridge", "swing", "led-test"])
+    ap.add_argument("target", choices=["drone", "bridge", "swing"])
     ap.add_argument("--port", default=None, help="serial port (default: autodetect)")
+    ap.add_argument("--board", default="s3", choices=["s3", "c6"],
+                    help="which XIAO board the bridge is (default: s3)")
     args = ap.parse_args()
 
     port = args.port or find_port()
@@ -103,10 +107,13 @@ def main():
     if args.target == "bridge":
         if not shutil.which("arduino-cli"):
             sys.exit("arduino-cli not found. Install it (esp32 core 3.x), or use the Arduino IDE\n"
-                     "to open %s and upload to board XIAO_ESP32C6." % BRIDGE_INO)
+                     "to open %s and upload to board %s."
+                     % (BRIDGE_INO, "XIAO_ESP32S3" if args.board == "s3" else "XIAO_ESP32C6"))
         # compile and upload together on purpose: `arduino-cli upload` alone re-flashes
         # the LAST COMPILED binary, which silently flashes a stale sketch.
-        rc = subprocess.call(["arduino-cli", "compile", "--fqbn", FQBN,
+        fqbn = BRIDGE_FQBN[args.board]
+        print("Board: %s" % fqbn)
+        rc = subprocess.call(["arduino-cli", "compile", "--fqbn", fqbn,
                               "--upload", "-p", port, BRIDGE_INO])
     else:
         print("Selecting the firmware build:")
@@ -114,17 +121,14 @@ def main():
         # Always force this off for flight builds. The LED bench-test firmware skips
         # ALL flight code, so if it is left enabled the motors simply never spin and
         # it looks like dead hardware.
-        set_define(MAIN_C, "LED_BENCH_TEST", 1 if args.target == "led-test" else 0)
+        set_define(MAIN_C, "LED_BENCH_TEST", 0)
         print("Building + flashing (the first build takes a few minutes)…\n")
         rc = run_idf(port)
 
     print()
     if rc == 0:
         print("Flashed OK on %s." % port)
-        if args.target == "led-test":
-            print("NOTE: this board now has NO flight code on it. Run `python flash.py drone`\n"
-                  "      before trying to fly again.")
-        elif args.target == "swing":
+        if args.target == "swing":
             print("NOTE: this is the experimental 4-motor build and has never been flown.\n"
                   "      `python flash.py drone` puts the normal blimp back.")
     else:

@@ -9,19 +9,16 @@ Serves three pages from one server, chosen at launch:
 
 The DRONE does ALL the control math (firmware blimp_guidance.c: path-following +
 carrot + arrival hold + hover). This Mac panel ONLY:
-  1. reads the mocap (NatNet) for the blimp and the goal marker,
-  2. STREAMS the pose + goal to the drone (0xA6 frames), and
+  1. reads the mocap (NatNet) for the blimp,
+  2. STREAMS the pose + target to the drone (0xA6 frames), and
   3. streams the tuning gains (0xA7 frames) when you move a slider.
 Nothing about the trajectory is computed here — the sliders just retune the
 loops running on the drone, live, with no reflash.
 
   OptiTrack --lab WiFi--> Mac (this panel) --USB--> C6 --ESP-NOW--> blimp (S3)
 
-TWO tracked rigid bodies:
-  --body       the blimp
-  --goal-body  a GOAL MARKER placed in the lab (default 502). Auto flies to
-               wherever the marker IS, live -- move it and the goal follows.
-               Toggle to manual Target X/Y/Z boxes in the panel.
+One tracked rigid body (--body, the blimp). The target is set in the panel:
+a drawn path, a circle, or the manual Target X/Y/Z boxes.
 
 HOW ENGAGE / DISENGAGE WORKS (one-way ESP-NOW): the drone auto-engages the
 on-board controller the instant it receives a pose frame, and its own
@@ -33,7 +30,7 @@ The path/carrot drawn in the panel is a LOCAL MIRROR of the on-board math, for
 visualization only — the real numbers live on the drone (CRTP log group blimpc).
 
 Run it with `python run.py` from the repo root, or directly:
-  python panel_server.py --server 192.168.0.4 --body 531 --goal-body 502
+  python panel_server.py --server 192.168.0.4 --body 531
 then open http://127.0.0.1:8601
 """
 import argparse, glob, json, math, os, struct, subprocess, sys, threading, time, webbrowser
@@ -157,8 +154,9 @@ def load_trim():
             S["profile"] = "tilted"
         _apply_tuning(S["profiles"].get(S["profile"], {}))
         # restore the last target choice (marker vs manual X/Y/Z) across restarts
-        if d.get("target_source") in ("marker", "manual"):
-            S["target_source"] = d["target_source"]
+        # legacy configs may say "marker" (the goal-marker feature is gone)
+        if d.get("target_source") == "manual":
+            S["target_source"] = "manual"
         t = d.get("target")
         if isinstance(t, dict):
             for k in ("x", "y", "z"):
@@ -209,9 +207,8 @@ def save_trim():
 lock = threading.Lock()
 S = {
     "raw": {"x": 0.0, "y": 0.0, "z": 0.0, "q": [0, 0, 0, 1], "valid": False, "t": 0.0},
-    "goal_raw": {"x": 0.0, "y": 0.0, "z": 0.0, "valid": False, "t": 0.0},
     "target": {"x": 1.0, "y": 0.0, "z": 1.2},
-    "target_source": "marker",   # "marker" = chase the live goal body; "manual" = X/Y/Z boxes
+    "target_source": "manual",   # the Target X/Y/Z boxes (kept for config compatibility)
     "path_mode": "circle",       # "circle" = ring; "heading" = turn-test; "path" = waypoints
     # orbit radius (m), lead_m = how far AHEAD along the ring the streamed setpoint sits
     # (metres of arc -- the "distance between consecutive setpoints"), +CCW/-CW.
@@ -372,15 +369,6 @@ def mapped():
     h0, h1, alt = _map_raw(r, up)
     yaw = _wrap_pi(quat_yaw(r.get("q", [0, 0, 0, 1]), up) + math.radians(trim))
     return h0, h1, alt, yaw, r.get("valid", False)
-
-def goal_mapped():
-    """Goal-marker pose -> (h0, h1, alt, fresh)."""
-    with lock:
-        r = dict(S["goal_raw"]); up = S["up_axis"]
-        fresh = r["valid"] and (time.time() - r["t"]) < 1.0
-    h0, h1, alt = _map_raw(r, up)
-    return h0, h1, alt, fresh
-
 
 TAKEOFF_BAND = 0.15   # m below target Z at which "takeoff" is considered done
 TAKEOFF_RATE = 0.35   # m/s -- how fast the climb setpoint ramps up (gentle = no overshoot)
@@ -606,7 +594,7 @@ def _resolve_target():
     (pursuit-on-a-circle; robust for a slow craft that can't be lapped).
     POINT mode: the live goal marker (if tracked) or the manual X/Y/Z."""
     with lock:
-        mode = S["path_mode"]; src = S["target_source"]
+        mode = S["path_mode"]
         tgt = dict(S["target"]); circ = dict(S["circle"]); hdg = S["heading_deg"]
         hold_alt = S["hold_alt"]
         wps = [list(p) for p in S["waypoints"]]; wp_loop = S["wp_loop"]
@@ -695,9 +683,6 @@ def _resolve_target():
         LL = max(0.10, float(circ.get("look_m", 1.0)))
         tx0, ty0 = _circle_pursuit(cx0, cy0, rr, LL, circ["dir"], h0, h1, yaw_now)
         return tx0, ty0, tgt["z"]
-    gh0, gh1, galt, gvalid = goal_mapped()
-    if src == "marker" and gvalid:
-        return gh0, gh1, galt
     return tgt["x"], tgt["y"], tgt["z"]
 
 
@@ -865,7 +850,7 @@ def _path_carrot(h0, h1, pts, look, loop, prog):
     return [cx, cy], new_prog
 
 
-def natnet_thread(server_ip, body_id, goal_body_id, local_ip, multicast):
+def natnet_thread(server_ip, body_id, local_ip, multicast):
     sys.path.insert(0, os.path.join(DIR, "..", "optitrack_natnet"))
     try:
         from NatNetClient import NatNetClient
@@ -879,10 +864,6 @@ def natnet_thread(server_ip, body_id, goal_body_id, local_ip, multicast):
                 S["raw"].update(x=pos[0], y=pos[1], z=pos[2], q=list(rot),
                                 valid=True, t=time.time())
                 S["frames"] += 1
-        elif goal_body_id is not None and idn == goal_body_id:
-            with lock:
-                S["goal_raw"].update(x=pos[0], y=pos[1], z=pos[2],
-                                     valid=True, t=time.time())
 
     try:
         c = NatNetClient()
@@ -903,8 +884,6 @@ def natnet_thread(server_ip, body_id, goal_body_id, local_ip, multicast):
             last = S["frames"]
             if S["raw"]["valid"] and (time.time() - S["raw"]["t"]) > 1.0:
                 S["raw"]["valid"] = False
-            if S["goal_raw"]["valid"] and (time.time() - S["goal_raw"]["t"]) > 1.0:
-                S["goal_raw"]["valid"] = False
 
 
 def _gain_frame():
@@ -2177,9 +2156,6 @@ def handle(d):
                 S["profile"] = name
                 _apply_tuning(S["profiles"].get(name, {}))
                 S["gains_dirty"] = True
-        elif a == "target_source":
-            if d.get("src") in ("marker", "manual"):
-                S["target_source"] = d["src"]
         elif a == "upaxis":
             if d.get("axis") in ("Y", "Z"):
                 S["up_axis"] = d["axis"]
@@ -2256,14 +2232,11 @@ def handle(d):
 
 def state_payload():
     h0, h1, alt, yaw, valid = mapped()
-    gh0, gh1, galt, gvalid = goal_mapped()
     with lock:
         return {
             "raw": dict(S["raw"]),
             "mapped": {"h0": round(h0, 3), "h1": round(h1, 3),
                        "alt": round(alt, 3), "yaw": round(math.degrees(yaw), 1)},
-            "goal": {"h0": round(gh0, 3), "h1": round(gh1, 3),
-                     "alt": round(galt, 3), "valid": gvalid},
             "target": dict(S["target"]), "target_source": S["target_source"],
             "path_mode": S["path_mode"], "circle": dict(S["circle"]),
             "waypoints": [list(p) for p in S["waypoints"]], "wp_loop": S["wp_loop"],
@@ -2342,8 +2315,6 @@ def main():
     ap = argparse.ArgumentParser(description="On-board autonomous blimp panel (streams pose+gains).")
     ap.add_argument("--server", required=True, help="OptiTrack/Motive PC IP")
     ap.add_argument("--body", type=int, required=True, help="blimp rigid-body Streaming ID")
-    ap.add_argument("--goal-body", type=int, default=502,
-                    help="goal-marker rigid-body Streaming ID (default 502)")
     ap.add_argument("--local", default=None, help="this Mac's IP (auto if omitted)")
     ap.add_argument("--unicast", action="store_true", help="NatNet unicast (default multicast)")
     ap.add_argument("--bridge-port", default=None, help="C6 serial port (auto if omitted)")
@@ -2378,14 +2349,14 @@ def main():
             local = None
 
     threading.Thread(target=natnet_thread,
-                     args=(args.server, args.body, args.goal_body, local, not args.unicast),
+                     args=(args.server, args.body, local, not args.unicast),
                      daemon=True).start()
     threading.Thread(target=fly_thread, args=(args.bridge_port,), daemon=True).start()
 
     srv = ThreadingHTTPServer(("127.0.0.1", PORT), H)
     url = "http://127.0.0.1:%d" % PORT
-    print("Mocap panel at %s  (blimp #%d, goal marker #%d @ %s, local %s)" %
-          (url, args.body, args.goal_body, args.server, local))
+    print("Mocap panel at %s  (blimp #%d @ %s, local %s)" %
+          (url, args.body, args.server, local))
     print("The DRONE computes guidance; this panel only streams pose + gains.")
     print("Keep this window open. Ctrl-C to stop.")
     try: webbrowser.open(url)

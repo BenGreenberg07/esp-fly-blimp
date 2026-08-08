@@ -62,14 +62,13 @@ pip install -r requirements.txt
 Then edit **`config.json`**:
 
 ```json
-{ "motive_ip": "192.168.0.4", "body_id": 531, "goal_id": 502, "up": "Z" }
+{ "motive_ip": "192.168.0.4", "body_id": 531, "up": "Z" }
 ```
 
 | field | meaning |
 |---|---|
 | `motive_ip` | IP of the OptiTrack/Motive PC streaming NatNet |
 | `body_id`   | the blimp's Rigid Body **Streaming ID** in Motive |
-| `goal_id`   | a 2nd tracked marker to chase in go-to-goal mode (optional) |
 | `up`        | up axis, `"Z"` or `"Y"` (also togglable live in the panel) |
 
 ## 4. Run it
@@ -152,8 +151,7 @@ See **[control/README.md](control/README.md)** for the full detail.
 ### ⭐ Auto — `python run.py --mode auto` (port 8601)
 The day-to-day tool. Streams your live mocap pose to the drone's **on-board guidance**
 (firmware `blimp_guidance.c`) — pure-pursuit steering with a lookahead carrot plus an
-altitude PID. Fly to a drawn **path**, a **circle**, a manual X/Y **point**, or a moving
-**goal marker** (a second tracked rigid body — move it and the target follows live).
+altitude PID. Fly a drawn **path**, a **circle**, or a manual X/Y **point**.
 Every gain is a live slider. Also has hand-fly, gamepad control, sys-ID test buttons, and
 per-run CSV/PNG logging.
 
@@ -161,6 +159,14 @@ per-run CSV/PNG logging.
 Pure hand-fly, no autonomy: `W/S` forward, `A/D` turn, `Q/E` up/down, `Space` = kill,
 plus hover-assist, trim, and per-direction power sliders. The simplest option for a first
 flight, a bridge check, or a motor sanity check.
+
+**Gamepad supported** (Auto mode has it too). An Xbox controller — or any USB/Bluetooth
+pad the browser recognises — gives you *proportional* control instead of on/off keys:
+**RT** = forward throttle, **right stick X** = turn, **left stick Y** = up/down,
+**B** = KILL. The keyboard keeps working alongside it, and if the pad is unplugged or the
+tab loses focus the panel falls back to the keys within a fraction of a second, so a
+forgotten pad can never hold the motors on. Browsers only expose a gamepad after you
+press a button on it, so "no pad" until first input is expected.
 
 ### Wander — `python run.py --mode wander` (port 8613)
 Flies to a point (random within a box, or a list you click), **parks and coasts to a
@@ -182,7 +188,7 @@ Start to finish, in the order you should actually do it.
 | Part | Notes |
 |---|---|
 | Seeed **XIAO ESP32-S3** micro-drone (ESP-Drone) | the flight board — 4 brushed motor channels |
-| Seeed **XIAO ESP32-C6** | the USB↔ESP-NOW bridge that plugs into your laptop |
+| A second **XIAO ESP32-S3** (or ESP32-C6) | the USB↔ESP-NOW bridge that plugs into your laptop |
 | 4× brushed coreless motors + props | 2 forward, 1 up, 1 down (see the mixer below) |
 | Helium envelope (mylar) | must lift the gondola + battery with a little margin |
 | 1S LiPo | small — weight is everything |
@@ -250,15 +256,25 @@ flashes in one step.
 
 ### Step 5 — Flash the bridge (ESP32-C6)
 
+The bridge can be **either a XIAO ESP32-S3 or a XIAO ESP32-C6** — the same sketch builds
+for both (the C6-only antenna switch is compiled out on an S3). An S3 is the easy choice
+since it's the same board as the drone:
+
 ```bash
-arduino-cli compile --fqbn esp32:esp32:XIAO_ESP32C6 --upload -p /dev/cu.usbmodemXXXX \
-  espnow_bridge/espnow_bridge.ino
+python flash.py bridge            # XIAO ESP32-S3 (default)
+python flash.py bridge --board c6 # XIAO ESP32-C6
 ```
 
-Board support: Arduino **esp32 core 3.x**. Arduino IDE works too.
+Needs `arduino-cli` with the Arduino **esp32 core 3.x**. The Arduino IDE works too — open
+`espnow_bridge/espnow_bridge.ino` and pick board `XIAO_ESP32S3` or `XIAO_ESP32C6`.
 
-> `arduino-cli upload` on its own re-flashes the *last compiled* binary — always
-> `compile --upload` together or you'll flash a stale sketch.
+> If you use `arduino-cli` by hand, note that `upload` on its own re-flashes the *last
+> compiled* binary — always `compile --upload` together or you'll flash a stale sketch.
+> (`flash.py` does this correctly for you.)
+
+> **Using a C6?** Check whether your board has a u.FL external-antenna connector. The
+> sketch enables the external antenna, so the physical antenna must be attached — with
+> the switch set and no antenna fitted, range is *worse* than stock.
 
 Your USB adapter will usually only show **one** port at a time, so flash the two boards
 one after the other, not together.
@@ -472,7 +488,6 @@ python control/check_link.py --bridge-port COM5    # if auto-detect picks the wr
 | Symptom | Cause |
 |---|---|
 | Tracking pill never goes green | laptop isn't on the mocap network, or the wrong `body_id` |
-| Motors don't spin at all after flashing | you may have flashed the LED bench-test build — re-run `python flash.py drone`, which forces the flag off |
 | Flies wider circles than drawn | `fwdMaxN` too high — slow it down |
 | Turns the wrong way | **⟳ Flip turn direction** in the panel |
 | Sinks during flight | buoyancy or battery sag, not gains — check `zff` isn't above `vertMaxPwm` |
