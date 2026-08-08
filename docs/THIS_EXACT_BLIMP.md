@@ -80,9 +80,9 @@ identify the boards if you have several.
 The drone also brings up its own access point, which you don't need for normal flying:
 SSID `ESP-DRONE_80B54EF11031`, password `12345678`, CRTP at `udp://192.168.43.42:2390`.
 
-### How this blimp flies (worth 30 seconds before you touch it)
+### How this blimp flies
 
-It is **not** a quadcopter and it does not behave like one:
+It is not a quadcopter and does not behave like one:
 
 - **Turning is differential.** There is no yaw thruster — it turns by running one forward
   motor harder than the other. So **every turn also pushes it forward**; it cannot spin
@@ -94,8 +94,8 @@ It is **not** a quadcopter and it does not behave like one:
 - **It's pendulum-stable.** The gondola hangs low, so it self-rights. There is no
   attitude/tilt loop to tune — don't go looking for one.
 
-Minimum turn radius is about **1–1.25 m**, and radius grows with speed. That's the single
-most useful fact about flying it.
+Minimum turn radius is about **1–1.25 m**, and radius grows with speed. This is the most
+important characteristic to keep in mind when flying it.
 
 ### Motors
 
@@ -129,13 +129,13 @@ panel, which just flips that sign back.
 
 ---
 
-## Getting it flying again, from cold
+## Cold-start procedure
 
-### 0 — Make sure it's on the right firmware
+### 0 — Confirm the firmware build
 
-If nobody has touched it since I left, skip this; it's already flashed and paired. But if
-you're unsure — or someone tried the 4-motor experiment on it — put the standard build
-back before doing anything else:
+If the hardware has not been modified since I left it, this step can be skipped — both
+boards are already flashed and paired. If you are unsure, or if the 4-motor build was
+flashed onto it, restore the standard build before anything else:
 
 ```bash
 python flash.py drone
@@ -144,9 +144,9 @@ python flash.py drone
 That forces the `BLIMP_SWING` flag off and restores the normal two-forward-motor mixer
 and the on-board guidance. It is always safe to run.
 
-### Then, every time
+### Startup sequence
 
-1. **Charge the LiPo.** Really.
+1. **Charge the LiPo.**
 2. **Check the helium.** The envelope loses lift over days. It should be *very slightly*
    heavy — sinking slowly when released. Too light is much harder to fly than too heavy.
    Trim with tape.
@@ -174,7 +174,7 @@ and the on-board guidance. It is always safe to run.
 
 ---
 
-## Things I learned the hard way
+## Practical notes and known pitfalls
 
 **Flashing the S3 fails a lot, and it's never broken.** If `idf.py flash` says *"No
 serial data received"* or *"Invalid head of packet"*, use `--before usb_reset`, or unplug
@@ -205,7 +205,7 @@ boards.
 
 ---
 
-## Known open issue — check this first
+## Known open issue — verify the motor map
 
 The last time I bench-tested motor channels, **pressing the M3 test button appeared to
 drive both forward motors**, and M4 (up) didn't spin during a flight test even though it
@@ -227,7 +227,7 @@ is deliberately a software choice so wiring mistakes stay cheap.
 
 ---
 
-## If you do need to reflash
+## Reflashing
 
 | Command | What it gives you |
 |---|---|

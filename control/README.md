@@ -1,10 +1,10 @@
 # control/ — the ground station
 
 Everything that runs on your laptop. Start it from the repo root with
-`python run.py --mode <auto|manual|wander|swing>` — don't run these files directly unless
-you're debugging.
+`python run.py --mode <auto|manual|wander|swing>`. Run these files directly only when
+debugging.
 
-## What's here
+## Contents
 
 | File | What it does |
 |---|---|
@@ -25,7 +25,7 @@ you're debugging.
 | `mellinger_core.py` | SE(3) Mellinger controller port + the geometry-driven damped-least-squares mixer. |
 | `swing_trajectory.py` | Trajectory generator for that build. |
 
-## How control actually flows
+## Control flow
 
 ```
 Motive ──NatNet──▶ panel_server.py ──USB serial──▶ C6 bridge ──ESP-NOW──▶ drone
@@ -45,7 +45,7 @@ pursuit + altitude loops run in firmware (`blimp_guidance.c`). That's why no gai
 ever needs a reflash, and why the path drawn on screen is a *mirror* of the on-board math
 rather than the source of it.
 
-## Safety behaviour worth knowing
+## Safety behaviour
 
 - **Browser watchdog** — if the page stops polling for 1.5 s the server stops streaming,
   and the drone's own stale-pose failsafe cuts the motors.

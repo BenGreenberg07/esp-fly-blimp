@@ -21,9 +21,9 @@ problem.
 
 # Getting started
 
-## 1. Do I clone it or download it?
+## 1. Getting the code
 
-**Either works.** You only need the files on your computer — there is nothing to install
+Clone it or download it — either works. You only need the files on your computer — there is nothing to install
 globally and no build step for the ground station.
 
 ```bash
@@ -34,7 +34,7 @@ cd esp-fly-blimp
 No git? Click the green **Code ▾ → Download ZIP** button on GitHub and unzip it. Same
 thing.
 
-## 2. What's the minimum I actually need?
+## 2. Minimum files required
 
 **To FLY (ground station only) — this is most people, most of the time:**
 
@@ -88,9 +88,9 @@ The panel opens in your browser. Press **ARM** to connect the USB bridge, then f
 **Nothing here needs a reflash.** Every gain is a live slider; the drone runs its own
 guidance and the panel just streams pose, commands, and tuning to it.
 
-## 5. Wait — what am I actually running?
+## 5. What each script does
 
-There are only **two scripts** in this repo, and you'll almost only ever use the first:
+There are two scripts in this repo. The first is the one used for flying:
 
 | Script | When you use it |
 |---|---|
@@ -113,11 +113,10 @@ laptop — explained in [Next steps](#next-steps--the-s-blimp-4-motor-airframe).
 
 ---
 
-# Make it come back when you push it
+# Returning to a point after a hand push
 
-The thing people always want to see: **shove the blimp by hand and it curves back to
-where it belongs.** No special mode — it falls straight out of the constant-cruise
-pursuit controller.
+Push the blimp by hand and it curves back to the point it was assigned. This needs no
+special mode — it is a direct consequence of the constant-cruise pursuit controller.
 
 1. `python run.py --mode auto`, then **ARM**.
 2. Click **⋯ Path** (the path mode button in the *Auto path shape* card).
@@ -129,7 +128,7 @@ It climbs to the target altitude, flies to your point, and then keeps circling i
 minimum turn radius. Shove it across the room and the steering carrot is still that one
 point, so it banks around and comes back on a curve. Let go and it re-converges.
 
-Why one point is enough: in path mode the controller always steers at a "carrot" running
+Why a single point is sufficient: in path mode the controller always steers at a "carrot" running
 `lookahead` metres along the path ahead of it. With a single waypoint the carrot *is*
 that waypoint, permanently — so there is no state to reset and no way for a push to
 confuse it. That's it.
@@ -254,7 +253,7 @@ flashes in one step.
 > LiPo and replug the USB cable, then retry immediately. The chip is never damaged by a
 > failed connect — esptool fails before it writes anything.
 
-### Step 5 — Flash the bridge (ESP32-C6)
+### Step 5 — Flash the bridge (ESP32-S3 or C6)
 
 The bridge can be **either a XIAO ESP32-S3 or a XIAO ESP32-C6** — the same sketch builds
 for both (the C6-only antenna switch is compiled out on an S3). An S3 is the easy choice
@@ -372,7 +371,7 @@ Inherited the physical hardware rather than building your own? The specific IDs,
 addresses, and quirks of the blimp I actually flew are in
 [docs/THIS_EXACT_BLIMP.md](docs/THIS_EXACT_BLIMP.md).
 
-### On-board firmware (the interesting parts)
+### On-board firmware (custom components)
 Built on Espressif's [ESP-Drone](https://github.com/espressif/esp-drone) (a Crazyflie
 port). The custom work:
 - `.../blimp_guidance.c` — the on-board guidance controller (pursuit + carrot + altitude
@@ -394,7 +393,7 @@ The next airframe replaces "2 forward + 1 up + 1 down" with **four motors on an 
 all pointing roughly upward, canted about 45°** (photo above; frame is
 `hardware/s-blimp-frame-test2.stl`).
 
-**Why bother.** The current blimp's problems all trace back to one thing: the only
+**Motivation.** The current blimp's problems all trace back to one thing: the only
 horizontal actuator is a pair of unidirectional forward motors, so it can't brake, can't
 rotate in place, and drifts sideways through every turn. Four canted motors change the
 actuation entirely — vertical thrust and yaw come out directly, and horizontal motion
@@ -415,7 +414,7 @@ vector pulls it along** (hence "swing blimp").
 - A panel with props-off per-motor bench buttons and a motor-map editor, so you map
   channels to arms by clicking rather than resoldering.
 
-**What's left to do:**
+**Remaining work:**
 1. `python flash.py swing` (drone only; `python flash.py drone` puts the old blimp back).
 2. Props off — bench-test M1..M4 and set the motor map from what actually spins.
 3. Confirm the real cant matches a layout — watch which allocation row reads zero.
@@ -427,13 +426,13 @@ vector pulls it along** (hence "swing blimp").
 
 # Future additions
 
-### A PCB with the ESP32 on it
+### PCB with an integrated ESP32
 Today the flight board is a XIAO module soldered onto a carrier — the between-board
 joints are the most fragile thing on the vehicle and they add height and weight. The plan
 is a **custom PCB with the ESP32-S3 native on the board**: no module, no inter-chip
 soldering, one part to place.
 
-### H-bridges so the motors can reverse
+### H-bridge motor drivers for reverse thrust
 The single biggest limitation of the whole design is that the brushed motors are driven
 by one low-side MOSFET each, so they only spin one way. Adding **H-bridge drivers
 (e.g. DRV8833)** would let the forward motors reverse, which buys:
@@ -476,7 +475,7 @@ then rebuild and flash.
 
 # Troubleshooting
 
-**The panel won't connect / nothing moves.** Run the terminal-only check first — it opens
+**If the panel will not connect, or nothing moves,** run the terminal-only check first — it opens
 the bridge, confirms the drone is really replying over ESP-NOW, and can spin each motor:
 
 ```bash

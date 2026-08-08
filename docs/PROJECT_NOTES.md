@@ -1,8 +1,8 @@
 # Design notes
 
-Why this thing is built the way it is. The [README](../README.md) covers how to run it;
-this covers the reasoning, the protocol internals, and the findings that took real flight
-time to learn.
+The rationale behind the design. The [README](../README.md) covers how to run the system;
+this covers the reasoning, the protocol internals, and the findings that required
+substantial flight testing to establish.
 
 ---
 
@@ -42,7 +42,7 @@ Frames carry a 4-byte magic tag and are dispatched on length:
 | → drone | `0xA7` | 84 B | the live gain set |
 | ← laptop | `0xB7` | 16 B | motor telemetry (mL, mR, mUp, mDown) |
 
-**Why the magic tag exists** — and the single most expensive bug in this project. The
+**Why the magic tag exists.** This was the most costly bug in the project. The
 receiver originally told frame types apart **by length alone**. The lab is full of other
 ESP-NOW devices, and their broadcasts happened to land in our length ranges: a foreign
 103-byte frame was parsed as a gain update, wrote garbage gains, produced NaNs, and
@@ -104,20 +104,20 @@ up and one down. Consequences, all confirmed in flight:
 | Model-predictive control (MPPI, then IPOPT/CasADi) | Excellent in simulation, poor in the room. Removed. |
 | Anticipatory curvature preview (slow before corners) | Helped in sim, not clearly in flight. Removed. |
 
-**Why MPC didn't survive.** Both solvers beat pursuit convincingly against the identified
+**Why MPC was removed.** Both solvers beat pursuit convincingly against the identified
 plant — and then tracked worse in the air. The honest reading is that the plant model was
 fitted from limited flight data (the yaw channel in particular was never cleanly
 identifiable), so the optimizer was solving the wrong problem very precisely. A controller
 that assumes less was more robust to that error than one that assumes more.
 
-**Why the drift can't be cancelled.** To oppose sideways drift using only forward thrust,
+**Why the drift cannot be cancelled.** To oppose sideways drift using only forward thrust,
 you must crab at an angle where `sin(β) = drift / forward`. Measured mount drift is
 ~0.15 m/s and slow cruise is ~0.15 m/s, so that's a ~45° crab — marginal and unstable.
 Model-based feedforward was tested and *lost* to simple reactive crabbing. The real fixes
 are physical: centre the gondola under the envelope, spread the forward motors wider, or
 add H-bridges so the motors can reverse.
 
-## 6. Safety, learned by breaking things
+## 6. Safety mechanisms
 
 - **Soft-start** ramps motors over ~0.7 s. Engaging all channels at once from zero drew
   enough inrush to brown out the pack.
