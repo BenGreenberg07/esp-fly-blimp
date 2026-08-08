@@ -1,0 +1,49 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "▶ Auto panel (fly a path / come back to a point)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/run.py",
+      "args": ["--mode", "auto"],
+      "console": "integratedTerminal",
+      "justMyCode": true
+    },
+    {
+      "name": "▶ Manual panel (hand-fly)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/run.py",
+      "args": ["--mode", "manual"],
+      "console": "integratedTerminal",
+      "justMyCode": true
+    },
+    {
+      "name": "▶ Wander panel (park, wait for a push, move on)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/run.py",
+      "args": ["--mode", "wander"],
+      "console": "integratedTerminal",
+      "justMyCode": true
+    },
+    {
+      "name": "▶ Swing panel (4-motor S-blimp — UNTESTED)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/run.py",
+      "args": ["--mode", "swing"],
+      "console": "integratedTerminal",
+      "justMyCode": true
+    },
+    {
+      "name": "▶ Check the link (terminal only, no panel)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/control/check_link.py",
+      "console": "integratedTerminal",
+      "justMyCode": true
+    }
+  ]
+}

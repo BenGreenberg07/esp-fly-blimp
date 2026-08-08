@@ -1,0 +1,634 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Blimp On-Board Panel</title>
+<style>
+  :root{color-scheme:dark}
+  *{box-sizing:border-box}
+  body{margin:0;background:#0b0f14;color:#e6edf3;font:13px/1.4 -apple-system,Segoe UI,Roboto,sans-serif;display:flex;height:100vh;overflow:hidden}
+  #view{flex:1;position:relative;background:radial-gradient(circle at 50% 40%,#11202e,#0b0f14 70%)}
+  canvas{display:block;width:100%;height:100%}
+  #hud{position:absolute;top:10px;left:12px;font-size:12px;color:#9fb2c4;pointer-events:none}
+  #hud b{color:#e6edf3}
+  #side{width:340px;padding:14px 16px;background:#11161d;overflow-y:auto;border-left:1px solid #20262e}
+  h1{font-size:15px;margin:0 0 4px}
+  .sub{color:#7d8da0;font-size:11px;margin:0 0 12px}
+  h2{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#7d8da0;margin:14px 0 6px}
+  .gh{font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:#5d6a78;margin:8px 0 2px}
+  .card{background:#0b0f14;border:1px solid #232c36;border-radius:9px;padding:10px 12px;margin-bottom:10px}
+  .row{display:flex;justify-content:space-between;align-items:center;margin:4px 0;gap:8px}
+  .mono{font-family:ui-monospace,Menlo,monospace}
+  .big{font-size:22px;font-weight:600}
+  label{color:#8b98a8;font-size:12px}
+  input[type=number]{width:52px;background:#0b0f14;border:1px solid #2a323c;color:#e6edf3;border-radius:5px;padding:3px 5px;font-family:ui-monospace,monospace}
+  button{cursor:pointer;border:1px solid #2a323c;background:#1c232c;color:#e6edf3;border-radius:6px;padding:7px 10px;font-size:13px}
+  button:hover{background:#283039}
+  .seg{display:flex;gap:6px}.seg button.on{background:#1f6feb;border-color:#1f6feb}
+  .kk{padding:4px 8px;border:1px solid #2a3744;border-radius:5px;font:12px ui-monospace,monospace;background:transparent;transition:background .05s}
+  .kk.act{background:#1f6feb;border-color:#1f6feb}
+  #fly{width:100%;padding:12px;font-size:15px;font-weight:700;background:#238636;border-color:#238636;margin-bottom:8px;border-radius:8px}
+  #fly.flying{background:#1f6feb;border-color:#1f6feb}
+  #kill{width:100%;padding:12px;font-size:15px;font-weight:800;background:#da3633;border-color:#da3633;border-radius:8px;margin-bottom:8px}
+  #gobtn{width:100%;padding:11px;font-weight:700;border-radius:8px}
+  #gobtn.flying{background:#8957e5;border-color:#8957e5}
+  .pill{padding:1px 8px;border-radius:10px;font-size:11px}.ok{background:#1a7f37}.bad{background:#6e1517}.spin{background:#9e6a03}.brk{background:#8957e5}
+  .axx{color:#ff6b6b}.axy{color:#6bff95}.axz{color:#6ba8ff}
+  #err{color:#ffa198;font-size:12px;min-height:15px;margin-top:4px}
+  .hint{color:#6f7d8c;font-size:11px;margin-top:6px;line-height:1.5}
+</style></head>
+<body>
+<div id="view"><canvas id="c"></canvas>
+  <div id="hud"><b id="hudpos">—</b><br><span id="hudalt"></span></div>
+  <div style="position:absolute;top:10px;right:12px" class="seg">
+    <button id="v2d" class="on" onclick="setView('2d')" title="top-down plan view, no Z axis">2D top-down</button>
+    <button id="v3d" onclick="setView('3d')">3D</button>
+    <button onclick="clearTrail()" title="erase the blue flown-trajectory line">🧹 Clear trail</button>
+  </div>
+  <div style="position:absolute;bottom:8px;left:12px;font-size:11px;color:#5d6a78">drag rotate · scroll zoom · 🟢 waypoints · 🟦 smoothed path · 🔵 flown · 🟡 nose/heading · 🟪 motion(drift) · 🟠 target</div>
+</div>
+
+<div id="side">
+  <h1>🎈 Blimp On-Board Panel</h1>
+  <p class="sub">The <b>drone</b> computes all guidance. This panel only streams mocap pose + goal and your tuning gains — no reflash to tune.</p>
+
+  <div class="card">
+    <div class="row"><label>Blimp tracking</label><span id="track" class="pill bad">no data</span></div>
+    <div class="row"><label>NatNet</label><span class="mono" id="rate">0 Hz</span></div>
+    <div class="row"><label>ESP-NOW bridge</label><span class="mono" id="bridge">—</span></div>
+  </div>
+
+
+  <button id="fly" onclick="toggleFly()">▶ ARM (connect bridge)</button>
+  <button id="kill" onclick="kill()">■ KILL</button>
+  <div id="err"></div>
+
+  <div class="seg" style="margin:8px 0">
+    <button style="flex:1" onclick="flashDrone()" title="Build + flash the drone firmware (whichever controller is selected) — opens a Terminal so you can watch">⚡ Flash drone (S3)</button>
+    <button style="flex:1" onclick="flashC6()" title="Compile + upload the C6 bridge — opens a Terminal so you can watch">⚡ Flash C6 bridge</button>
+  </div>
+  <div class="hint" style="margin-top:0">Flashing opens a Terminal window with live progress + a ✅/❌ confirmation. Plug in <b>only</b> the board you're flashing. Arming pauses automatically so the USB port is free. <b>One unified controller</b> — “Flash drone (S3)” builds and flashes it.</div>
+
+  <h2>Autonomous — fly to the goal (on-board)</h2>
+  <div class="card">
+    <button id="gobtn" onclick="toggleGoto()">▶ GO to goal</button>
+    <div class="row mono"><span>range to target</span><span id="grange" class="big">—</span></div>
+    <div class="row mono"><span>heading err (local est)</span><span id="herr" class="pill">—</span></div>
+    <div class="row mono"><span>auto</span><span id="holdpill" class="pill">—</span></div>
+    <div class="row" id="mtgt" style="display:none"><label>X</label><input type="number" step="0.1" id="atx" oninput="setAtarget()"><label>Y</label><input type="number" step="0.1" id="aty" oninput="setAtarget()"><label>Z</label><input type="number" step="0.1" id="atz" oninput="setAtarget()"></div>
+    <div class="row"><label>X error (m)</label></div><canvas id="spex" width="240" height="42" style="width:100%;height:42px"></canvas>
+    <div class="row"><label>Y error (m)</label></div><canvas id="spey" width="240" height="42" style="width:100%;height:42px"></canvas>
+    <button style="width:100%" onclick="saveGraph()">💾 Save graph (PNG)</button>
+  </div>
+
+  <h2>Sys-ID tests <span class="pill mono" id="testpill" style="font-size:11px">idle</span></h2>
+  <div class="card">
+    <div class="row" style="gap:4px">
+      <button style="flex:1" onclick="runTest('coast')" title="Drives hard straight ~4.5 s (forward pushed high so it beats the sideways drift), then CUTS the forward motors and glides to a stop — repeated 3×. The glide-down identifies forward drag. Logged automatically.">▶ Forward + coast ×3</button>
+      <button style="flex:1" onclick="runTest('yawstep')" title="OPEN-LOOP yaw: holds a FIXED turn command (forward off) ~5s so the spin rate steadies, then cuts it and lets the spin COAST down — ×3. Isolates yaw gain + yaw drag. Logged automatically. Turn Hover/Up on so it holds altitude.">↻ Yaw step + coast ×3</button>
+    </div>
+    <div class="row" style="gap:4px;margin-top:4px"><label style="flex:1">Spin direction</label><span class="seg"><button id="olCCW" onclick="setOlDir(1)" title="spin one way">↺ CCW</button><button id="olCW" onclick="setOlDir(-1)" title="spin the other way">↻ CW</button></span></div>
+    <button style="width:100%;margin-top:4px" onclick="runTest('abort')" title="Stop the running test (also: KILL stops everything)">■ Stop test</button>
+    <div class="row" style="gap:4px;margin-top:6px;border-top:1px solid #223;padding-top:6px">
+      <button style="flex:1" onclick="runTest('latency')" title="Sends 6 short yaw KICKS and times how long until the mocap sees the drone start moving = the full command→motion→mocap round-trip delay. This is the number that decides whether live MPC will be stable. Hold altitude first (ARM + a little Up/Hover).">⏱ Measure latency</button>
+      <span class="pill mono" id="latpill" style="min-width:6em;text-align:center">— ms</span>
+    </div>
+    <div class="hint">Auto-runs a <b>logged</b> maneuver for the plant fit, then cuts the motors. Hold current altitude first (ARM + a little Up/Hover if it sinks). <b>KILL</b> aborts instantly. Keep this tab focused — the watchdog stops streaming if it loses the panel. <b>⏱ Latency</b> = command→motion round-trip delay (the key number for MPC).</div>
+  </div>
+
+  <div class="card" id="atcard" style="display:none;margin-top:8px;border:1px solid #c8891f">
+    <div class="row"><label><b>🧭 Auto-trim</b> (host, drift)</label><span class="pill mono" id="atpill">—</span></div>
+    <div class="row"><label>Strength (ki)</label><input type="number" step="0.05" id="at_ki" oninput="setAtKi(this.value)" style="width:5em"><button id="atBtn" onclick="toggleAutotrim()">on/off</button></div>
+    <div class="hint">Integrates the measured sideways drift and crabs the nose to cancel it — including the turn-coupled momentum centering can't fix. If it makes drift <b>worse</b>, flip the sign (negative ki) or turn it off. Only in this auto-trim panel.</div>
+  </div>
+
+  <h2>Auto path shape</h2>
+  <div class="card">
+    <div class="seg"><button id="pmCircle" style="flex:1" onclick="setPathMode('circle')" title="follow a circle — chase a carrot ahead on the ring (constant cruise)">◯ Circle</button><button id="pmPath" style="flex:1" onclick="setPathMode('path')" title="follow waypoints — click the 2D view to drop points; it flows through them">⋯ Path</button><button id="pmHeading" style="flex:1" onclick="setPathMode('heading')" title="turn-only test: forward off, tune the heading loop alone">↻ Turn test</button></div>
+    <div id="pathrow" style="display:none;margin-top:6px">
+      <div class="row" style="gap:4px"><button style="flex:1" onclick="undoWp()" title="remove the last waypoint you added">↶ Undo pt</button><button style="flex:1" onclick="clearWps()" title="remove all waypoints">✕ Clear pts</button><button id="wpLoopBtn" style="flex:1" onclick="toggleWpLoop()" title="loop back to the first point and fly forever">↻ Loop: on</button></div>
+      <div class="row" style="gap:4px;margin-top:4px"><label>R (m)</label><input id="fig8R" type="number" step="0.1" min="0.4" max="3" value="1.2" style="width:4.5em"><button style="flex:1" onclick="makeFig8()">∞ Figure-8</button></div>
+      <div class="hint"><b>Click the 2D view</b> to drop waypoints, or use the <b>∞ Figure-8</b> preset — <b>shift-click</b> to move its center (⊕). The blimp chases a carrot <b>Lookahead</b> metres ahead along the path, so it <b>rounds each corner</b> (cuts it by ~lookahead) and flows through — no stopping, momentum planned for. Bigger <b>lookahead</b> = rounder corners. Loop on = orbit the whole path forever. Set center/altitude via Manual Z. Press <b>GO to goal</b>.</div>
+    </div>
+    <div id="hdgrow" style="display:none;margin-top:6px">
+      <div class="row"><label>Target heading°</label><input type="number" step="5" id="hdg_deg" oninput="setHeading(this.value)"><button onclick="headingHere()" title="set target = current heading">face now</button></div>
+      <div class="row" style="gap:4px"><button style="flex:1" onclick="nudgeHeading(-90)">−90</button><button style="flex:1" onclick="nudgeHeading(-45)">−45</button><button style="flex:1" onclick="nudgeHeading(45)">+45</button><button style="flex:1" onclick="nudgeHeading(90)">+90</button></div>
+      <div class="hint">Isolates the TURN: forward is forced OFF and altitude just holds. Give it a heading (green ray = goal direction) and tune <b>kpHead / kdHead / turnCap</b> until it snaps to it with no overshoot or spin. Watch <b>heading err → 0</b>. Press GO to run.</div>
+    </div>
+    <div id="circrow" style="display:none;margin-top:6px">
+      <div class="row"><label>Radius (m)</label><input type="number" step="0.1" id="cir_r" oninput="setCircle()"></div>
+      <div class="row"><label>Lookahead (m)</label><input type="range" min="0.40" max="2.00" step="0.05" id="cir_look_m" style="flex:1" oninput="setCircle()"><span id="cir_look_m_v" style="min-width:3.4em;text-align:right">—</span></div>
+      <div class="row"><label>Direction</label><span class="seg"><button id="cdCCW" onclick="setDir(1)">↺ CCW</button><button id="cdCW" onclick="setDir(-1)">↻ CW</button></span></div>
+      <div class="row"><label>Nose calibration</label><button onclick="zeroHeading()" title="Point the blimp's nose at the Target X/Y marker, then click — sets the heading offset so heading error reads 0">🎯 Zero heading</button><span class="mono" id="ytv" style="min-width:4.5em;text-align:right">—</span></div>
+      <div class="hint">Do this on the ground with motors off: physically aim the <b>nose</b> at the Target X/Y point, then click <b>🎯 Zero heading</b>. It measures the fixed offset between the rigid body's reported yaw and the real nose, and applies it to the streamed heading, the on-screen arrow and the heading error together. Needs tracking, and at least 0.25 m from the target.</div>
+      <div class="hint">Orbits the <b>manual Target X/Y</b> (center, orange ring) at this radius and altitude. <b>Lookahead</b> is true pure pursuit: the aim point is where a circle of this radius around the blimp cuts the ring, taking the forward one — so the goal is <b>always exactly this far away</b>, however far off the ring it has drifted. Off-ring the aim point sits across the ring, so it steers back on by itself. <b>Too small is dangerous</b>: bearing to a near point is noisy and flips ~180° if the craft drifts past it (measured: below 0.3 m the heading error p90 is 152°, versus 35° at 1.2–2.0 m). <b>Bigger = smoother, corners cut wider.</b> Start around 1.0 m. Set the center in Manual X/Y, then press <b>GO to goal</b>.</div>
+    </div>
+  </div>
+
+  <h2>On-board gains <span style="font-weight:400;color:#7d8da0">(live · streamed · saved)</span></h2>
+  <div class="card" id="gcfg"></div>
+  <button id="yawflip" style="width:100%" onclick="flipYaw()" title="If auto turns the wrong way / spins out, flip this (sign of turnMaxPwm)">⟳ Flip turn direction (sign: ?)</button>
+
+  <h2>Manual test fly (bridge check, auto off)</h2>
+  <div class="card">
+    <div class="row"><label>Manual teleop</label><span class="mono" id="manlvl">fwd 0%</span></div>
+    <div class="row"><label>🎮 Gamepad</label><span class="pill" id="padpill">no pad</span></div>
+    <div class="hint">Xbox pad: <b>RT</b> = forward (proportional — half-squeeze is half power), <b>right stick ⟷</b> = turn, <b>left stick ↕</b> = up/down, <b>B</b> = KILL. Press any button once to wake the pad up. Falls back to WASD/QE automatically if the pad goes quiet.</div>
+    <div id="keys" style="display:flex;flex-wrap:wrap;gap:4px;margin:4px 0">
+      <span class="kk" id="kW">W&nbsp;fwd</span><span class="kk" id="kS">S&nbsp;brake</span>
+      <span class="kk" id="kA">A&nbsp;↺</span><span class="kk" id="kD">D&nbsp;↻</span>
+      <span class="kk" id="kQ">Q&nbsp;↑</span><span class="kk" id="kE">E&nbsp;↓</span>
+    </div>
+    <div class="hint">Hold <b>W</b> ramp fwd · <b>A/D</b> turn · <b>Q/E</b> up/down · <b>S</b> brake · <b>Space</b> = KILL. Use it to confirm the bridge moves motors before GO.</div>
+    <div class="row" style="gap:4px;margin-top:6px">
+      <button id="hoverBtn" style="flex:1" onclick="toggleHover()" title="hold a baseline up thrust so it floats while you hand-fly (tune with the Up power slider)">⊙ Hover: off</button>
+    </div>
+    <div class="row mono" style="margin-top:6px"><span>heading</span><span id="hdgval" class="pill">—</span><span>drift</span><span id="driftval" class="pill">—</span></div>
+    <div class="hint">Nose 🟡 vs motion 🟪 — the <b>drift</b> angle between them is the sideways slip you're hunting.</div>
+    <div class="row" style="gap:4px;margin-top:6px">
+      <button id="recBtn" style="flex:1" onclick="toggleRecord()" title="record x/y/yaw + trajectory of your manual flight">⏺ Record</button>
+      <button id="replayBtn" style="flex:1" onclick="replayRec()" title="replay the last recording like a video" disabled>▶ Replay</button>
+      <button id="recSaveBtn" style="flex:1" onclick="saveRecCsv()" title="download the loaded/recorded data as CSV (t,x,y,yaw)" disabled>⬇ CSV</button>
+    </div>
+    <div class="row" style="gap:4px;margin-top:4px">
+      <label for="csvFile" style="flex:1;text-align:center;cursor:pointer;padding:6px;border:1px solid #2a3340;border-radius:6px" title="load ANY flight CSV (manual or auto run) to replay it">📂 Load CSV to replay</label>
+      <input id="csvFile" type="file" accept=".csv" onchange="loadCsv(event)" style="display:none">
+    </div>
+    <div class="hint" id="rechint">Record a manual flight (auto-saved to flight_logs/), or <b>Load CSV</b> to replay any run — manual or auto — like a video on the 2D view.</div>
+  </div>
+  <div class="card" style="margin-top:8px"><div class="row"><label>Manual yaw trim</label><span class="mono" id="mtval">0.00</span></div>
+    <input type="range" min="-0.5" max="0.5" step="0.01" value="0" id="mtrim" style="width:100%" oninput="setTrim(this.value)"></div>
+  <div class="card"><div class="row"><label>Manual max power</label><span class="mono" style="opacity:.6">per direction</span></div>
+    <div class="row"><label>Forward</label><input type="range" min="0" max="1" step="0.02" id="pw_fwd" oninput="setPow('fwd',this.value)" style="flex:1"><span class="mono" id="pv_fwd">—</span></div>
+    <div class="row"><label>Up</label><input type="range" min="0" max="1" step="0.02" id="pw_up" oninput="setPow('up',this.value)" style="flex:1"><span class="mono" id="pv_up">—</span></div>
+    <div class="row"><label>Down</label><input type="range" min="0" max="1" step="0.02" id="pw_down" oninput="setPow('down',this.value)" style="flex:1"><span class="mono" id="pv_down">—</span></div>
+    <div class="row"><label>Left turn</label><input type="range" min="0" max="1" step="0.02" id="pw_left" oninput="setPow('left',this.value)" style="flex:1"><span class="mono" id="pv_left">—</span></div>
+    <div class="row"><label>Right turn</label><input type="range" min="0" max="1" step="0.02" id="pw_right" oninput="setPow('right',this.value)" style="flex:1"><span class="mono" id="pv_right">—</span></div>
+  </div>
+
+  <h2>Pose</h2>
+  <div class="card">
+    <div class="row mono"><span class="axx">X raw</span><span id="rx">0.000</span></div>
+    <div class="row mono"><span class="axy">Y raw</span><span id="ry">0.000</span></div>
+    <div class="row mono"><span class="axz">Z raw</span><span id="rz">0.000</span></div>
+    <div class="row"><label>Up axis</label>
+      <span class="seg"><button id="upY" onclick="setUp('Y')">Y</button><button id="upZ" onclick="setUp('Z')">Z</button></span></div>
+    <div class="row"><label>altitude</label><span class="mono big" id="alt">0.000</span></div>
+    <div class="row mono"><label>heading</label><span id="yaw">0°</span></div>
+  </div>
+</div>
+
+<script>
+const cv=document.getElementById('c'), ctx=cv.getContext('2d');
+let az=0.7-Math.PI/2, el=0.5, scale=80, up='Z', view='2d', dragging=false, lx=0, ly=0, state=null, trail=[];
+// --- manual-flight recording + video replay (client-side: x,y,yaw,t) ---
+let recording=false, recBuf=[], recT0=0, lastRec=[];
+let replaying=false, replayStart=0;
+function rsz(){cv.width=cv.clientWidth*devicePixelRatio;cv.height=cv.clientHeight*devicePixelRatio;ctx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0);}
+window.addEventListener('resize',rsz); rsz();
+cv.addEventListener('mousedown',e=>{dragging=true;lx=e.clientX;ly=e.clientY});
+window.addEventListener('mouseup',()=>dragging=false);
+window.addEventListener('mousemove',e=>{if(!dragging)return;az+=(e.clientX-lx)*0.01;el=Math.max(-1.4,Math.min(1.4,el+(e.clientY-ly)*0.01));lx=e.clientX;ly=e.clientY});
+cv.addEventListener('wheel',e=>{e.preventDefault();scale=Math.max(25,Math.min(300,scale*(e.deltaY<0?1.1:0.9)))},{passive:false});
+
+function proj(x,y,z){
+  let g0,g1,u; if(up==='Y'){g0=x;g1=z;u=y;}else{g0=x;g1=y;u=z;}
+  const a=g0*Math.cos(az)-g1*Math.sin(az), b=g0*Math.sin(az)+g1*Math.cos(az);
+  return [cv.clientWidth/2+a*scale, cv.clientHeight/2-(u*Math.cos(el)-b*Math.sin(el))*scale];
+}
+function P(p){
+  if(view==='2d'){ return [cv.clientWidth/2-p[1]*scale, cv.clientHeight/2-p[0]*scale]; }
+  return up==='Y'?proj(p[1],p[2],p[0]):proj(p[1],p[0],p[2]);
+}
+function line(p,q,col,w){ctx.strokeStyle=col;ctx.lineWidth=w||1;ctx.beginPath();ctx.moveTo(p[0],p[1]);ctx.lineTo(q[0],q[1]);ctx.stroke();}
+function dot(p,r,col){ctx.fillStyle=col;ctx.beginPath();ctx.arc(p[0],p[1],r,0,7);ctx.fill();}
+// arrow from screen-pt a to b with a chevron head (shows heading direction)
+function arrow(a,b,col,w){ctx.strokeStyle=col;ctx.lineWidth=w||2;ctx.beginPath();ctx.moveTo(a[0],a[1]);ctx.lineTo(b[0],b[1]);ctx.stroke();
+  const ang=Math.atan2(b[1]-a[1],b[0]-a[0]),hl=6;
+  ctx.beginPath();ctx.moveTo(b[0],b[1]);ctx.lineTo(b[0]-hl*Math.cos(ang-0.4),b[1]-hl*Math.sin(ang-0.4));
+  ctx.moveTo(b[0],b[1]);ctx.lineTo(b[0]-hl*Math.cos(ang+0.4),b[1]-hl*Math.sin(ang+0.4));ctx.stroke();}
+
+function draw(){
+  ctx.clearRect(0,0,cv.clientWidth,cv.clientHeight);
+  ctx.globalAlpha=0.45;
+  for(let i=-3;i<=3;i++){line(P([i,-3,0]),P([i,3,0]),'#1b232c');line(P([-3,i,0]),P([3,i,0]),'#1b232c');}
+  ctx.globalAlpha=0.18;const H=2.2;
+  [[-3,-3],[3,-3],[3,3],[-3,3]].forEach(c=>line(P([c[0],c[1],0]),P([c[0],c[1],H]),'#3a4858',1));
+  ctx.globalAlpha=1;
+  line(P([0,0,0]),P([1.5,0,0]),'#ff6b6b',2);
+  line(P([0,0,0]),P([0,1.5,0]),'#6bff95',2);
+  line(P([0,0,0]),P([0,0,1.5]),'#6ba8ff',2);
+  ctx.font='12px ui-monospace';
+  ctx.fillStyle='#ff6b6b';ctx.fillText('X',...P([1.62,0,0]));
+  ctx.fillStyle='#6bff95';ctx.fillText('Y',...P([0,1.62,0]));
+  ctx.fillStyle='#6ba8ff';ctx.fillText('Z',...P([0,0,1.62]));
+  if(!state)return requestAnimationFrame(draw);
+  const t=state.target, m=state.mapped;
+  const tp=P([t.x,t.y,t.z]);
+  ctx.globalAlpha=0.5;line(P([t.x,t.y,0]),tp,'#f0a020',1);ctx.globalAlpha=1;
+  ctx.strokeStyle='#f0a020';ctx.lineWidth=2;ctx.beginPath();ctx.arc(tp[0],tp[1],9,0,7);ctx.stroke();
+  line([tp[0]-13,tp[1]],[tp[0]+13,tp[1]],'#f0a020',1);line([tp[0],tp[1]-13],[tp[0],tp[1]+13],'#f0a020',1);
+  const pz=(state.valid?m.alt:t.z);
+  if(state.path_mode==='circle'&&state.circle){
+    const R=state.circle.r,seg=54;ctx.strokeStyle='#f0a020';ctx.globalAlpha=0.5;ctx.lineWidth=1.5;ctx.beginPath();
+    for(let i=0;i<=seg;i++){const a=i/seg*2*Math.PI,s=P([t.x+R*Math.cos(a),t.y+R*Math.sin(a),pz]);i?ctx.lineTo(s[0],s[1]):ctx.moveTo(s[0],s[1]);}
+    ctx.stroke();ctx.globalAlpha=1;
+  }
+  // PUSH MARKERS: red X wherever the wander detector decided it felt a hand.
+  // Newest is brightest. Lets you see at a glance whether a jump was a real shove
+  // or the detector firing on the craft's own motion somewhere out on the path.
+  if(state.wander_push_marks&&state.wander_push_marks.length){
+    const mk=state.wander_push_marks;
+    for(let i=0;i<mk.length;i++){
+      const s=P([mk[i][0],mk[i][1],pz]),fresh=(i+1)/mk.length;
+      ctx.globalAlpha=0.25+0.75*fresh;
+      line([s[0]-7,s[1]-7],[s[0]+7,s[1]+7],'#ff4040',2);
+      line([s[0]-7,s[1]+7],[s[0]+7,s[1]-7],'#ff4040',2);
+      if(i===mk.length-1){ctx.fillStyle='#ff6060';ctx.font='10px sans-serif';
+        ctx.fillText(mk[i][2]||'push',s[0]+10,s[1]-8);}
+      ctx.globalAlpha=1;
+    }
+  }
+  if(state.path_mode==='path'&&state.waypoints&&state.waypoints.length){
+    const wp=state.waypoints;
+    // raw waypoint polyline: faint dashed (the corners you dropped)
+    if(wp.length>1){ctx.save();ctx.setLineDash([4,4]);ctx.strokeStyle='#3fb950';ctx.globalAlpha=0.35;ctx.lineWidth=1.2;ctx.beginPath();
+      wp.forEach((w,i)=>{const s=P([w[0],w[1],pz]);i?ctx.lineTo(s[0],s[1]):ctx.moveTo(s[0],s[1]);});
+      if(state.wp_loop){const s=P([wp[0][0],wp[0][1],pz]);ctx.lineTo(s[0],s[1]);}
+      ctx.stroke();ctx.restore();ctx.globalAlpha=1;}
+    // SMOOTHED trajectory it actually flies: solid teal (rounded corners)
+    const sp=state.smooth_path;
+    if(sp&&sp.length>1){ctx.strokeStyle='#2dd4bf';ctx.globalAlpha=0.9;ctx.lineWidth=2.4;ctx.beginPath();
+      sp.forEach((w,i)=>{const s=P([w[0],w[1],pz]);i?ctx.lineTo(s[0],s[1]):ctx.moveTo(s[0],s[1]);});
+      if(state.wp_loop){const s=P([sp[0][0],sp[0][1],pz]);ctx.lineTo(s[0],s[1]);}
+      ctx.stroke();ctx.globalAlpha=1;}
+    wp.forEach((w,i)=>{const s=P([w[0],w[1],pz]);dot(s,5,'#3fb950');
+      ctx.fillStyle='#0b0f14';ctx.font='10px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(i+1,s[0],s[1]);});
+  }
+  if(state.path_mode==='heading'&&state.valid&&state.heading_deg!==undefined){
+    const th=state.heading_deg*Math.PI/180;
+    line(P([m.h0,m.h1,pz]),P([m.h0+0.8*Math.cos(th),m.h1+0.8*Math.sin(th),pz]),'#3fb950',3);
+  }
+  if(state.path&&state.path.length>1){
+    ctx.strokeStyle='#3fb950';ctx.lineWidth=2;ctx.beginPath();
+    state.path.forEach((w,i)=>{const s=P([w[0],w[1],pz]);i?ctx.lineTo(s[0],s[1]):ctx.moveTo(s[0],s[1]);});ctx.stroke();
+    state.path.forEach(w=>dot(P([w[0],w[1],pz]),2.5,'#3fb950'));
+  }
+  if(state.carrot){const cp=P([state.carrot[0],state.carrot[1],pz]);
+    ctx.strokeStyle='#ffd166';ctx.lineWidth=2;ctx.beginPath();ctx.arc(cp[0],cp[1],6,0,7);ctx.stroke();dot(cp,2.5,'#ffd166');}
+  if(state.valid){
+    const b=[m.h0,m.h1,m.alt], bp=P(b), foot=P([m.h0,m.h1,0]);
+    {const lp=trail[trail.length-1];   // sample by DISTANCE not every 60fps frame (was the lag)
+     if(!lp||Math.hypot(b[0]-lp[0],b[1]-lp[1])>0.01){trail.push(b);if(trail.length>800)trail.shift();}}
+    ctx.globalAlpha=0.85;ctx.strokeStyle='#38bdf8';ctx.lineWidth=2.6;ctx.beginPath();
+    trail.forEach((q,i)=>{const s=P(q);i?ctx.lineTo(s[0],s[1]):ctx.moveTo(s[0],s[1]);});ctx.stroke();ctx.globalAlpha=1;
+    // dashed line to the carrot = WHERE IT'S TRYING TO GO right now
+    if(state.carrot){const cp2=P([state.carrot[0],state.carrot[1],pz]);
+      ctx.save();ctx.setLineDash([6,4]);ctx.strokeStyle='#ffd166';ctx.globalAlpha=0.7;ctx.lineWidth=1.5;
+      ctx.beginPath();ctx.moveTo(bp[0],bp[1]);ctx.lineTo(cp2[0],cp2[1]);ctx.stroke();ctx.restore();ctx.globalAlpha=1;}
+    ctx.globalAlpha=0.5;line(bp,foot,'#2a3744',1);ctx.globalAlpha=1;dot(foot,2,'#2a3744');
+    // solid orange line blimp->manual target: only meaningful when the manual
+    // point IS the goal. In PATH mode the manual X/Y is just a center/altitude
+    // reference, so the line to it is confusing -- the dashed carrot line above
+    // already shows where it's actually steering. Hide it in path mode.
+    if(state.path_mode!=='path')line(bp,tp,'#f0a020',1);
+    const yr=m.yaw*Math.PI/180, hp=[m.h0+0.45*Math.cos(yr),m.h1+0.45*Math.sin(yr),m.alt];
+    line(bp,P(hp),'#ffd166',3);dot(P(hp),3,'#ffd166');   // yellow = heading (nose)
+    // magenta = actual motion (momentum). Gap vs the nose = sideways drift.
+    if(trail.length>6){const q0=trail[trail.length-6],q1=trail[trail.length-1];
+      const dvx=q1[0]-q0[0],dvy=q1[1]-q0[1],sp=Math.hypot(dvx,dvy);
+      if(sp>0.008){const L=Math.min(0.8,sp*7),ve=[m.h0+L*dvx/sp,m.h1+L*dvy/sp,m.alt];
+        line(bp,P(ve),'#e879f9',3);dot(P(ve),3,'#e879f9');}}
+    dot(bp,11,'#1f6feb');dot(bp,6,'#9fd0ff');
+    // heading readout printed on the robot (degrees the nose points)
+    ctx.fillStyle='#ffd166';ctx.font='11px ui-monospace';ctx.textAlign='left';ctx.textBaseline='alphabetic';
+    ctx.fillText(m.yaw.toFixed(0)+'°',bp[0]+13,bp[1]-9);
+  }
+  // ---- manual-flight VIDEO REPLAY: animate the recorded x/y/yaw over time ----
+  if(replaying&&lastRec.length>1){
+    const el=performance.now()/1000-replayStart, endT=lastRec[lastRec.length-1].t;
+    let idx=0;while(idx<lastRec.length-1&&lastRec[idx].t<el)idx++;
+    ctx.strokeStyle='#38bdf8';ctx.lineWidth=2.4;ctx.globalAlpha=0.9;ctx.beginPath();
+    for(let i=0;i<=idx;i++){const s=P([lastRec[i].x,lastRec[i].y,0]);i?ctx.lineTo(s[0],s[1]):ctx.moveTo(s[0],s[1]);}
+    ctx.stroke();ctx.globalAlpha=1;
+    // periodic heading arrows so you SEE which way the nose pointed through the turn
+    const step=Math.max(1,Math.floor(lastRec.length/26));
+    ctx.globalAlpha=0.85;
+    for(let i=0;i<=idx;i+=step){const r=lastRec[i],a2=r.yaw*Math.PI/180;
+      arrow(P([r.x,r.y,0]),P([r.x+0.28*Math.cos(a2),r.y+0.28*Math.sin(a2),0]),'#f0a020',1.6);}
+    ctx.globalAlpha=1;
+    const c=lastRec[Math.min(idx,lastRec.length-1)],cp=P([c.x,c.y,0]);
+    const yr2=c.yaw*Math.PI/180,np=P([c.x+0.5*Math.cos(yr2),c.y+0.5*Math.sin(yr2),0]);
+    arrow(cp,np,'#ffd166',3);dot(cp,10,'#1f6feb');dot(cp,5,'#9fd0ff');
+    // live cumulative yaw + net drift so the turn test reads out during replay
+    let yawSum=0;for(let i=1;i<=idx;i++){let dd=((lastRec[i].yaw-lastRec[i-1].yaw+540)%360)-180;yawSum+=dd;}
+    const d0=lastRec[0],dr=Math.hypot(c.x-d0.x,c.y-d0.y);
+    ctx.fillStyle='#8fa3b8';ctx.font='12px ui-monospace';ctx.textAlign='left';
+    ctx.fillText('turned '+yawSum.toFixed(0)+'°  ·  drift '+dr.toFixed(2)+'m',12,40);
+    ctx.fillStyle='#8fa3b8';ctx.font='12px ui-monospace';ctx.textAlign='left';
+    ctx.fillText('▶ replay '+el.toFixed(1)+' / '+endT.toFixed(1)+'s',12,22);
+    if(el>endT)replaying=false;
+  }
+  setTimeout(()=>requestAnimationFrame(draw),22);   // ~30fps cap (data is only ~16Hz) — less jank
+}
+requestAnimationFrame(draw);
+
+async function post(o){try{await fetch('/api',{method:'POST',body:JSON.stringify(o)});}catch(e){}}
+function setUp(a){up=a;post({action:'upaxis',axis:a});}
+function setView(v){view=v;document.getElementById('v3d').className=v==='3d'?'on':'';document.getElementById('v2d').className=v==='2d'?'on':'';}
+function toggleFly(){post({action:'fly',on:!(state&&state.flying)});}
+function kill(){post({action:'kill'});}
+function toggleGoto(){post({action:'goto'});}
+function runTest(k){post({action:'test',kind:k});}
+function setOlDir(d){post({action:'ol_dir',value:d});}
+function setAtKi(v){post({action:'at_ki',value:+v});}
+function toggleAutotrim(){post({action:'autotrim'});}
+setInterval(function(){if(!window.state)return;var c=document.getElementById('atcard');if(!c)return;
+  c.style.display=state.autotrim_build?'':'none';
+  var pill=document.getElementById('atpill');if(pill)pill.textContent=state.autotrim?('ON  crab '+((state.at_i||0)*57.3).toFixed(0)+'°'):'off';
+  var b=document.getElementById('atBtn');if(b)b.textContent=state.autotrim?'turn OFF':'turn ON';
+  var k=document.getElementById('at_ki');if(k&&document.activeElement!==k&&state.at_ki!==undefined)k.value=state.at_ki;
+},400);
+setInterval(function(){if(!window.state)return;var d=state.ol_dir;var a=document.getElementById('olCCW'),b=document.getElementById('olCW');if(a)a.className=(d>=0?'on':'');if(b)b.className=(d<0?'on':'');},400);
+setInterval(function(){var e=document.getElementById('testpill');if(e)e.textContent=(window.state&&state.test)?('▶ '+state.test):'idle';},400);
+setInterval(function(){if(!window.state)return;var e=document.getElementById('latpill');if(!e)return;
+  e.textContent=(state.latency_ms!=null)?(state.latency_ms+' ms'):(state.latency_detail||'— ms');
+  e.className='pill mono '+(state.latency_ms==null?'':(state.latency_ms<120?'ok':(state.latency_ms<250?'spin':'bad')));
+  e.title=state.latency_detail||'';},400);
+function clearTrail(){trail=[];}
+function toggleHover(){post({action:'hover',on:!(state&&state.hover)});}
+function toggleRecord(){
+  if(recording){ recording=false; lastRec=recBuf.slice();
+    document.getElementById('recBtn').textContent='⏺ Record';
+    document.getElementById('recBtn').className='';
+    document.getElementById('replayBtn').disabled=lastRec.length<2;
+    document.getElementById('recSaveBtn').disabled=lastRec.length<2;
+    // save to disk server-side (flight_logs/manual_*.csv), like the auto runs
+    if(lastRec.length>=2) post({action:'save_rec',samples:lastRec.map(p=>[p.t,p.x,p.y,p.yaw])});
+    document.getElementById('rechint').textContent='Recorded '+lastRec.length+' samples ('+(lastRec.length?lastRec[lastRec.length-1].t.toFixed(1):0)+'s) → saved to flight_logs/. Replay or Load any CSV.';
+  } else { recBuf=[]; recT0=performance.now()/1000; recording=true; replaying=false;
+    document.getElementById('recBtn').textContent='⏹ Stop rec';
+    document.getElementById('recBtn').className='flying';
+    document.getElementById('rechint').textContent='● recording your manual flight… hit Stop when done.';
+  }
+}
+function replayRec(){ if(lastRec.length<2)return; replaying=true; replayStart=performance.now()/1000; }
+// Load ANY csv (manual t,x,y,yaw OR auto t_s,h0,h1,...,yaw_deg) into the replayer.
+function loadCsv(ev){
+  const file=ev.target.files&&ev.target.files[0]; if(!file)return;
+  const rd=new FileReader();
+  rd.onload=()=>{
+    try{
+      const lines=rd.result.split(/\r?\n/).filter(l=>l.trim().length);
+      const hdr=lines[0].split(',').map(s=>s.trim().toLowerCase());
+      const gi=names=>names.map(n=>hdr.indexOf(n)).find(i=>i>=0);
+      const it=gi(['t','t_s','time']), ix=gi(['x','h0']), iy=gi(['y','h1']), iyaw=gi(['yaw','yaw_deg']);
+      if(ix===undefined||iy===undefined){alert('CSV needs x/y (or h0/h1) columns');return;}
+      const out=[]; let t0=null;
+      for(let k=1;k<lines.length;k++){const c=lines[k].split(',');
+        const x=parseFloat(c[ix]),y=parseFloat(c[iy]);
+        if(isNaN(x)||isNaN(y))continue;
+        let t=it!==undefined?parseFloat(c[it]):(k-1)*0.05; if(isNaN(t))t=(k-1)*0.05;
+        if(t0===null)t0=t;
+        out.push({t:t-t0,x:x,y:y,yaw:iyaw!==undefined?(parseFloat(c[iyaw])||0):0});}
+      if(out.length<2){alert('no usable rows in CSV');return;}
+      lastRec=out;
+      document.getElementById('replayBtn').disabled=false;
+      document.getElementById('recSaveBtn').disabled=false;
+      document.getElementById('rechint').textContent='Loaded '+file.name+' ('+out.length+' pts, '+out[out.length-1].t.toFixed(1)+'s). Press Replay.';
+    }catch(e){alert('CSV parse error: '+e);}
+  };
+  rd.readAsText(file); ev.target.value='';
+}
+function saveRecCsv(){
+  if(lastRec.length<2)return;
+  let s='t,x,y,yaw\n'+lastRec.map(p=>p.t.toFixed(3)+','+p.x.toFixed(4)+','+p.y.toFixed(4)+','+p.yaw.toFixed(2)).join('\n')+'\n';
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([s],{type:'text/csv'}));
+  a.download='manual_'+new Date().toISOString().replace(/[:.]/g,'-').slice(0,19)+'.csv';
+  a.click();URL.revokeObjectURL(a.href);
+}
+function setProfile(name){post({action:'profile',name:name});}
+function flipYaw(){post({action:'yawsign'});}
+function flashDrone(){if(confirm('Flash the DRONE (ESP32-S3)?\n\nPlug ONLY the drone into USB. A Terminal window opens with live progress + confirmation. Arming will pause.'))post({action:'flash_drone'});}
+function flashC6(){if(confirm('Flash the C6 BRIDGE (XIAO ESP32-C6)?\n\nPlug ONLY the C6 into USB. A Terminal window opens with live progress + confirmation. Arming will pause.'))post({action:'flash_c6'});}
+function setTrim(v){document.getElementById('mtval').textContent=(+v).toFixed(2);post({action:'trim',value:+v});}
+function setPow(n,v){document.getElementById('pv_'+n).textContent=(+v).toFixed(2);post({action:'power',name:n,value:+v});}
+function fmtG(v){return Math.abs(v)>=100?Math.round(v).toString():(+v).toFixed(3);}
+function setGain(n,v){const e=document.getElementById('gcv_'+n);if(e)e.textContent=fmtG(+v);post({action:'gain',name:n,value:+v});}
+function setAtarget(){post({action:'target',x:+document.getElementById('atx').value,y:+document.getElementById('aty').value,z:+document.getElementById('atz').value});}
+function setPathMode(m){post({action:'path_mode',mode:m});}
+function undoWp(){post({action:'undo_wp'});}
+function clearWps(){post({action:'clear_wp'});}
+function toggleWpLoop(){post({action:'wp_loop',on:!(state&&state.wp_loop)});}
+// Click the 2D view (in Path mode) to drop a waypoint. Inverse of P() 2D:
+// screenX = W/2 - worldY*scale ; screenY = H/2 - worldX*scale.
+var fig8Center=[0,0];
+cv.addEventListener('click',e=>{
+  if(!state||state.path_mode!=='path'||view!=='2d')return;
+  const r=cv.getBoundingClientRect();
+  const ex=e.clientX-r.left, ey=e.clientY-r.top;
+  const worldX=(cv.clientHeight/2-ey)/scale, worldY=(cv.clientWidth/2-ex)/scale;
+  if(e.shiftKey){ fig8Center=[+worldX.toFixed(3),+worldY.toFixed(3)]; makeFig8(); return; }
+  post({action:'add_wp',x:worldX,y:worldY});
+});
+function makeFig8(){          // Gerono lemniscate: crosses at center, 2R wide, R tall
+  const R=+document.getElementById('fig8R').value||1.2, N=32, cx=fig8Center[0], cy=fig8Center[1], pts=[];
+  for(let k=0;k<N;k++){const t=2*Math.PI*k/N; pts.push([+(cx+R*Math.sin(t)).toFixed(3), +(cy+R*Math.sin(t)*Math.cos(t)).toFixed(3)]);}
+  post({action:'set_wps',pts:pts});
+  if(!state.wp_loop) post({action:'wp_loop',on:true});
+}
+function setDir(d){post({action:'circle',dir:d});}
+function zeroHeading(){if(confirm('Aim the blimp\'s NOSE at the Target X/Y marker, then OK.\n\nThis sets the heading offset so heading error reads 0 from here.'))post({action:'zero_heading'});}
+function setCircle(){const lm=+document.getElementById('cir_look_m').value;
+  document.getElementById('cir_look_m_v').textContent=lm.toFixed(2)+' m';
+  post({action:'circle',r:+document.getElementById('cir_r').value,look_m:lm});}
+function setHeading(v){post({action:'heading_deg',value:+v});}
+function headingHere(){post({action:'heading_here'});}
+function nudgeHeading(d){const cur=(state&&state.heading_deg!==undefined)?state.heading_deg:0;post({action:'heading_deg',value:cur+d});}
+window.addEventListener('blur',()=>post({action:'kill'}));
+
+let gbuilt=false;
+const GHELP={
+ Altitude:"Holds height. Auto-trim slowly learns the buoyancy so it stops drifting up or down on its own.",
+ Steering:"Points the nose at the goal. Damping stops it swinging past the heading.",
+ Forward:"Drives toward the goal at a set speed once it is roughly facing it.",
+ Arrival:"How it settles at the goal without overshooting (it can't brake, only coast).",
+ Path:"The straight line it plans to the goal, and the aim-ahead point it chases along it.",
+ Output:"Turns the 0–1 commands into motor power. Usually leave these — except turn sign if it steers the wrong way.",
+ Safety:"Cuts the motors if the mocap link drops.",
+};
+// v5 constant-cruise circle-follow: these go-to-a-point gains are no longer used
+// by the controller, so hide their sliders (still streamed to keep the frame size).
+const GHIDE=new Set(['alignFloor','kVel','holdExit','replanThresh']);
+function buildGains(spec){
+  const r=document.getElementById('gcfg');r.innerHTML='';
+  const order=[],buckets={};
+  spec.forEach(g=>{if(GHIDE.has(g[0]))return;const grp=g[5];if(!buckets[grp]){buckets[grp]=[];order.push(grp);}buckets[grp].push(g);});
+  order.forEach(grp=>{
+    const h=document.createElement('div');h.className='gh';h.textContent=grp;r.appendChild(h);
+    if(GHELP[grp]){const hp=document.createElement('div');hp.className='hint';hp.style.margin='0 0 4px';hp.textContent=GHELP[grp];r.appendChild(hp);}
+    buckets[grp].forEach(g=>{
+      const [key,def,mn,mx,st,group,label]=g;
+      const d=document.createElement('div');d.className='row';
+      d.innerHTML='<label>'+label+'</label><input type="range" min="'+mn+'" max="'+mx+'" step="'+st+'" id="gc_'+key+'" oninput="setGain(\''+key+'\',this.value)" style="flex:1"><span class="mono" id="gcv_'+key+'">—</span>';
+      r.appendChild(d);
+    });
+  });
+  gbuilt=true;
+}
+
+function saveGraph(){
+  const w=620,h=340,c=document.createElement('canvas');c.width=w;c.height=h;const g=c.getContext('2d');
+  g.fillStyle='#0d1117';g.fillRect(0,0,w,h);g.font='12px monospace';
+  function plot(arr,y0,hh,col,lbl){
+    g.strokeStyle='#30363d';g.lineWidth=1;g.beginPath();g.moveTo(46,y0+hh/2);g.lineTo(w-10,y0+hh/2);g.stroke();
+    g.fillStyle='#8b949e';g.fillText(lbl,6,y0+14);
+    if(arr.length<2)return;
+    let mn=Math.min(...arr,-0.05),mx=Math.max(...arr,0.05);
+    g.strokeStyle=col;g.lineWidth=2;g.beginPath();
+    arr.forEach((v,i)=>{const x=46+i/(arr.length-1)*(w-56);const yy=y0+hh-((v-mn)/(mx-mn))*(hh-12)-6;i?g.lineTo(x,yy):g.moveTo(x,yy);});
+    g.stroke();g.fillStyle='#8b949e';g.fillText(mx.toFixed(2),6,y0+26);g.fillText(mn.toFixed(2),6,y0+hh-2);
+  }
+  plot(HIST.ex,12,150,'#ffb703','X error (m)');
+  plot(HIST.ey,175,150,'#8ecae6','Y error (m)');
+  const a=document.createElement('a');a.download='blimp_xy_error_'+Date.now()+'.png';a.href=c.toDataURL('image/png');a.click();
+}
+
+const KEYMAP={w:'W',s:'S',a:'A',d:'D',q:'Q',e:'E'};
+const curKeys={W:false,S:false,A:false,D:false,Q:false,E:false};
+function sendKeys(){post({action:'keys',keys:curKeys});}
+function isTyping(){const el=document.activeElement;return el&&(el.tagName==='INPUT'||el.tagName==='TEXTAREA');}
+window.addEventListener('keydown',e=>{
+  if(e.code==='Space'&&!isTyping()){e.preventDefault();kill();return;}
+  if(!state||state.auto_go||isTyping())return;
+  const k=KEYMAP[e.key.toLowerCase()];if(!k||curKeys[k])return;
+  curKeys[k]=true;sendKeys();
+});
+window.addEventListener('keyup',e=>{
+  const k=KEYMAP[e.key.toLowerCase()];if(!k||!curKeys[k])return;
+  curKeys[k]=false;sendKeys();
+});
+
+// ---- GAMEPAD (Xbox etc): PROPORTIONAL manual control -------------------------
+//  RT (right trigger)  = forward throttle 0..1   (how hard you squeeze = power)
+//  Right stick X       = turn        -1..1
+//  Left stick Y        = up/down     -1..1  (push up = climb)
+//  B button            = KILL
+// Sent at ~25 Hz as an 'axes' action. The server ignores these the moment they
+// go stale (pad unplugged / tab backgrounded), falling back to WASD/QE -- so an
+// abandoned pad can never latch the motors on. Nothing is sent while auto is
+// flying, so the gamepad can't fight the autonomous controller.
+const PAD_DEAD=0.12, PAD_HZ=25;
+function padAxis(v){return Math.abs(v)<PAD_DEAD?0:(v-Math.sign(v)*PAD_DEAD)/(1-PAD_DEAD);}
+let padWasB=false, padLastSent=0;
+function padPoll(){
+  if(!navigator.getGamepads)return;
+  const gp=[...navigator.getGamepads()].find(g=>g&&g.connected);
+  const st=document.getElementById('padpill');
+  if(!gp){ if(st){st.textContent='no pad';st.className='pill';} return; }
+  // B = KILL (edge-triggered so holding it doesn't spam)
+  const b=gp.buttons[1]&&gp.buttons[1].pressed;
+  if(b&&!padWasB)kill();
+  padWasB=b;
+  const rt=gp.buttons[7]?gp.buttons[7].value:0;      // analog trigger 0..1
+  const fwd=rt<0.03?0:rt;
+  const turn=padAxis(gp.axes[2]||0);
+  const vert=-padAxis(gp.axes[1]||0);                // stick up = -1 -> climb
+  if(st){st.textContent='pad '+(fwd*100).toFixed(0)+'% t'+turn.toFixed(2)+' v'+vert.toFixed(2);
+         st.className='pill ok';}
+  if(!state||state.auto_go)return;                   // never fight the auto controller
+  const now=Date.now();
+  if(now-padLastSent<1000/PAD_HZ)return;
+  padLastSent=now;
+  post({action:'axes',fwd:fwd,turn:turn,vert:vert,name:(gp.id||'').slice(0,40)});
+}
+setInterval(padPoll,1000/PAD_HZ);
+window.addEventListener('gamepadconnected',e=>{console.log('gamepad:',e.gamepad.id);});
+
+const HIST={ex:[],ey:[]};
+function spark(id,arr,col){
+  const c=document.getElementById(id);if(!c)return;const g=c.getContext('2d');
+  g.clearRect(0,0,c.width,c.height);if(arr.length<2)return;
+  let mn=Math.min(...arr),mx=Math.max(...arr);if(mx-mn<0.2){const m=(mn+mx)/2;mn=m-0.1;mx=m+0.1;}
+  g.strokeStyle=col;g.lineWidth=1.5;g.beginPath();
+  arr.forEach((v,i)=>{const x=i/(arr.length-1)*c.width,y=c.height-((v-mn)/(mx-mn))*(c.height-4)-2;i?g.lineTo(x,y):g.moveTo(x,y);});
+  g.stroke();
+}
+let mtset=false, pwset=false, atset=false, gcset=false, cset=false, lastProfile=null;
+async function poll(){
+  try{
+    state=await (await fetch('/state')).json(); up=state.up_axis;
+    if(!gbuilt&&state.gain_spec)buildGains(state.gain_spec);
+    upY.className=up==='Y'?'on':'';upZ.className=up==='Z'?'on':'';
+    const tk=document.getElementById('track');tk.textContent=state.valid?'tracking':'no data';tk.className='pill '+(state.valid?'ok':'bad');
+    rate.textContent=state.rate+' Hz';bridge.textContent=state.bridge||'—';
+    rx.textContent=state.raw.x.toFixed(3);ry.textContent=state.raw.y.toFixed(3);rz.textContent=state.raw.z.toFixed(3);
+    alt.textContent=state.mapped.alt.toFixed(3);yaw.textContent=state.mapped.yaw.toFixed(0)+'°';
+    err.textContent=state.err||'';
+    const f=document.getElementById('fly');
+    f.textContent=state.flying?'❚❚ ARMED — click to disarm':'▶ ARM (connect bridge)';
+    f.className=state.flying?'flying':'';
+    document.getElementById('manlvl').textContent='fwd '+Math.round((state.fwd_level||0)*100)+'%';
+    // hover button state
+    const hb2=document.getElementById('hoverBtn');
+    if(hb2){hb2.textContent=state.hover?'⊙ Hover: ON':'⊙ Hover: off';hb2.className=state.hover?'flying':'';}
+    // record a sample (x,y,yaw) while recording; update heading + drift readouts
+    if(state.valid){
+      const yawd=state.mapped.yaw;
+      document.getElementById('hdgval').textContent=yawd.toFixed(0)+'°';
+      if(recording){const ts=performance.now()/1000-recT0;
+        recBuf.push({t:ts,x:state.mapped.h0,y:state.mapped.h1,yaw:yawd});}
+      // drift = angle between nose (yaw) and actual motion over last few samples
+      let dtxt='—';
+      if(trail.length>6){const q0=trail[trail.length-6],q1=trail[trail.length-1];
+        const dvx=q1[0]-q0[0],dvy=q1[1]-q0[1],sp=Math.hypot(dvx,dvy);
+        if(sp>0.01){let mvdir=Math.atan2(dvy,dvx)*180/Math.PI;
+          let d=((mvdir-yawd+540)%360)-180;dtxt=d.toFixed(0)+'°';}}
+      const dv=document.getElementById('driftval');dv.textContent=dtxt;
+    }
+    const ts=(state.gains&&state.gains.turnMaxPwm!==undefined)?state.gains.turnMaxPwm:0;
+    document.getElementById('yawflip').textContent='⟳ Flip turn direction (sign: '+(ts<0?'−':'+')+')';
+    const gb=document.getElementById('gobtn');
+    gb.textContent=state.auto_go?(state.hold?'✅ ARRIVED (holding) — click to stop':'■ STOP auto'):'▶ GO to goal';
+    gb.className=state.auto_go?'flying':'';
+    const hb=document.getElementById('herr');
+    if(hb){const he=state.herr; hb.textContent=(he!==undefined?he.toFixed(0)+'°':'—');
+      hb.className='pill '+(Math.abs(he||0)<15?'ok':(Math.abs(he||0)<50?'spin':'bad'));}
+    const hpl=document.getElementById('holdpill');
+    hpl.textContent=state.hold?'holding':(state.auto_go?'driving':'idle');
+    hpl.className='pill '+(state.hold?'ok':(state.auto_go?'brk':''));
+    if(state.profile!==lastProfile){lastProfile=state.profile;pwset=false;gcset=false;mtset=false;}
+    document.getElementById('mtgt').style.display='';
+    for(const k of ['W','S','A','D','Q','E']){const el=document.getElementById('k'+k);if(el)el.className='kk'+((state.keys&&state.keys[k])?' act':'');}
+    hudpos.textContent='x '+state.mapped.h0.toFixed(2)+'  y '+state.mapped.h1.toFixed(2);
+    hudalt.textContent=(state.valid?'alt '+state.mapped.alt.toFixed(2)+' m · yaw '+state.mapped.yaw.toFixed(0)+'°':'no track');
+    if(!mtset&&state.manual_trim!==undefined){const _mt=document.getElementById('mtrim');if(_mt){_mt.value=state.manual_trim;document.getElementById('mtval').textContent=(+state.manual_trim).toFixed(2);}mtset=true;}
+    if(!pwset&&state.powers){for(const n in state.powers){const s=document.getElementById('pw_'+n),v=document.getElementById('pv_'+n);if(s){s.value=state.powers[n];v.textContent=(+state.powers[n]).toFixed(2);}}pwset=true;}
+    if(!atset){atx.value=state.target.x;aty.value=state.target.y;atz.value=state.target.z;atset=true;}
+    document.getElementById('pmCircle').className=state.path_mode==='circle'?'on':'';
+    document.getElementById('pmPath').className=state.path_mode==='path'?'on':'';
+    document.getElementById('pmHeading').className=state.path_mode==='heading'?'on':'';
+    document.getElementById('circrow').style.display=state.path_mode==='circle'?'':'none';
+    document.getElementById('pathrow').style.display=state.path_mode==='path'?'':'none';
+    document.getElementById('hdgrow').style.display=state.path_mode==='heading'?'':'none';
+    document.getElementById('wpLoopBtn').textContent='↻ Loop: '+(state.wp_loop?'on':'off');
+    document.getElementById('wpLoopBtn').className=state.wp_loop?'on':'';
+    if(state.heading_deg!==undefined){const hd=document.getElementById('hdg_deg');if(hd&&document.activeElement!==hd)hd.value=Math.round(state.heading_deg);}
+    if(state.yaw_trim!==undefined){const yt=document.getElementById('ytv');if(yt)yt.textContent=(+state.yaw_trim).toFixed(1)+'°';}
+    if(state.circle){document.getElementById('cdCCW').className=state.circle.dir>=0?'on':'';
+      document.getElementById('cdCW').className=state.circle.dir<0?'on':'';
+      if(!cset){document.getElementById('cir_r').value=state.circle.r;
+        const lm=(state.circle.look_m!==undefined)?state.circle.look_m:1.0;
+        document.getElementById('cir_look_m').value=lm;
+        document.getElementById('cir_look_m_v').textContent=(+lm).toFixed(2)+' m';cset=true;}}
+    if(!gcset&&gbuilt&&state.gains){for(const k in state.gains){const s=document.getElementById('gc_'+k),v=document.getElementById('gcv_'+k);if(s){s.value=state.gains[k];v.textContent=fmtG(+state.gains[k]);}}gcset=true;}
+    if(state.valid){
+      const _ex=state.target.x-state.mapped.h0,_ey=state.target.y-state.mapped.h1;
+      HIST.ex.push(_ex);HIST.ey.push(_ey);if(HIST.ex.length>150)HIST.ex.shift();if(HIST.ey.length>150)HIST.ey.shift();
+      spark('spex',HIST.ex,'#ffb703');spark('spey',HIST.ey,'#8ecae6');
+      document.getElementById('grange').textContent=Math.hypot(_ex,_ey).toFixed(2)+' m';
+    }
+  }catch(e){}
+  setTimeout(poll,100);
+}
+poll();
+</script>
+</body></html>

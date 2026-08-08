@@ -1,0 +1,322 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Swing Blimp — Mellinger</title>
+<style>
+  :root{--bg:#0d1117;--card:#161b22;--line:#30363d;--tx:#e6edf3;--dim:#8b949e;
+        --grn:#238636;--red:#da3633;--orn:#c85a2f;--vio:#8957e5;--ok:#3fb950;--bad:#f85149;}
+  *{box-sizing:border-box}
+  body{margin:0;font:14px/1.4 -apple-system,system-ui,sans-serif;background:var(--bg);color:var(--tx);
+       display:flex;height:100vh;overflow:hidden}
+  #view{flex:1;position:relative;background:#0a0e14}
+  #c{width:100%;height:100%;display:block;cursor:crosshair}
+  #hud{position:absolute;top:10px;left:12px;font:12px ui-monospace,monospace;color:var(--dim);
+       pointer-events:none;white-space:pre}
+  #legend{position:absolute;bottom:8px;left:12px;font:11px ui-monospace,monospace;color:var(--dim)}
+  #side{width:390px;padding:14px;overflow-y:auto;background:var(--bg);border-left:1px solid var(--line)}
+  h1{font-size:16px;margin:0 0 2px}
+  .sub{color:var(--dim);font-size:12px;margin-bottom:10px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:10px;margin-bottom:10px}
+  .row{display:flex;align-items:center;justify-content:space-between;gap:6px;margin:4px 0}
+  label{color:var(--dim)}
+  .mono{font-family:ui-monospace,monospace}
+  .pill{padding:2px 8px;border-radius:10px;background:#21262d;font:12px ui-monospace,monospace}
+  .pill.ok{background:#12331d;color:var(--ok)} .pill.bad{background:#3a1416;color:var(--bad)}
+  .pill.warn{background:#3a2e12;color:#e3b341}
+  button{background:#21262d;color:var(--tx);border:1px solid var(--line);border-radius:6px;
+         padding:7px 9px;font-size:13px;cursor:pointer}
+  button:hover{border-color:#6e7681}
+  input{background:#0d1117;color:var(--tx);border:1px solid var(--line);border-radius:5px;
+        padding:3px 5px;width:5.5em;font-family:ui-monospace,monospace}
+  input[type=range]{width:100%;padding:0}
+  #arm{width:100%;background:var(--grn);border:none;font-weight:bold;padding:11px;margin-bottom:6px}
+  #kill{width:100%;background:var(--red);border:none;font-weight:bold;padding:13px;margin-bottom:10px;font-size:15px}
+  #engage{flex:1;background:var(--vio);border:none;font-weight:bold;padding:10px}
+  .mel{border-color:var(--vio)}
+  .hint{color:var(--dim);font-size:11.5px;margin-top:6px}
+  #err{color:var(--bad);font:12px ui-monospace,monospace;min-height:16px;margin-top:4px}
+  .grp{font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:var(--dim);
+       margin:9px 0 2px;border-bottom:1px solid var(--line);padding-bottom:2px}
+  .sl{margin:5px 0}
+  .sl .lab{display:flex;justify-content:space-between;font-size:11.5px;color:var(--dim)}
+  .sl .lab b{color:var(--tx);font-family:ui-monospace,monospace;font-weight:normal}
+  table.al{width:100%;font:11px ui-monospace,monospace;border-collapse:collapse}
+  table.al td,table.al th{padding:1px 3px;text-align:right;color:var(--dim)}
+  table.al th{color:var(--tx)}
+  .bar{height:9px;background:#21262d;border-radius:3px;overflow:hidden;flex:1}
+  .bar i{display:block;height:100%;background:var(--orn)}
+  details summary{cursor:pointer;color:var(--dim);font-size:12px;outline:none}
+  select{background:#0d1117;color:var(--tx);border:1px solid var(--line);border-radius:5px;padding:4px}
+</style>
+
+<div id="view">
+  <canvas id="c"></canvas>
+  <div id="hud">—</div>
+  <button onclick="trail=[]" style="position:absolute;top:8px;right:10px;padding:5px 9px">Clear trail</button>
+  <div id="legend">● blimp &nbsp; ✛ target &nbsp; ◉ motor duty (M1 fr, M2 rr, M3 rl, M4 fl) &nbsp;·&nbsp; click to set target X/Y</div>
+</div>
+
+<div id="side">
+  <h1>🎈 Swing Blimp — Mellinger</h1>
+  <div class="sub">The exact <span class="mono">controller_mellinger.c</span> running on this Mac ·
+    drone is a dumb 4-motor amplifier · separate from the decoupled panel</div>
+
+  <div class="card">
+    <div class="row"><label>Blimp tracking</label><span id="track" class="pill bad">no data</span></div>
+    <div class="row"><label>NatNet</label><span id="rate" class="mono">0 Hz</span></div>
+    <div class="row"><label>ESP-NOW bridge</label><span id="bridge" class="mono">—</span></div>
+  </div>
+
+  <button id="arm" onclick="post({action:'arm',on:!state.armed})">▶ ARM (connect bridge)</button>
+  <button id="kill" onclick="post({action:'kill'})">■ KILL</button>
+
+  <div class="card mel">
+    <div class="row"><label><b>Mellinger controller</b></label>
+      <button id="engage" onclick="post({action:'engage',on:!state.engaged})">ENGAGE</button></div>
+    <div class="row"><label>status</label><span id="melpill" class="pill">off</span></div>
+    <div class="row"><label>Target X / Y</label>
+      <input id="tx" type="number" step="0.1" onchange="setTarget()">
+      <input id="ty" type="number" step="0.1" onchange="setTarget()"></div>
+    <div class="row"><label>Target Z / yaw°</label>
+      <input id="tz" type="number" step="0.1" onchange="setTarget()">
+      <input id="tyaw" type="number" step="5" onchange="setTarget()"></div>
+    <div class="row" style="gap:5px">
+      <button style="flex:1" onclick="post({action:'target_here'})">📍 Target = here (X/Y)</button></div>
+    <div class="hint"><b>First flight:</b> bench-test the motor map (props OFF) below, set
+      <b>hover</b> so it floats, then ENGAGE with the target where it already sits and a finger on KILL.</div>
+  </div>
+
+  <div class="card">
+    <div class="row"><label><b>Motor duty</b> <span style="font-size:10.5px">from drone telemetry</span></label><span id="dutysum" class="mono">—</span></div>
+    <div class="row"><label style="font-size:11px">sent wrench</label><span id="wrenchrow" class="mono" style="font-size:11px">—</span></div>
+    <div id="bars"></div>
+    <div class="row" style="gap:4px;margin-top:7px">
+      <button style="flex:1" onclick="bench(0)">Thrust (all 4)</button>
+      <button style="flex:1" onclick="bench(1)">F_x</button>
+      <button style="flex:1" onclick="bench(2)">F_y</button>
+      <button style="flex:1" onclick="bench(3)">M_z</button>
+      <button style="flex:1" onclick="post({action:'bench',index:null})">stop</button>
+    </div>
+    <div class="hint"><b>PROPS OFF.</b> The drone mixes on board now, so no single
+      motor can be driven alone &mdash; every motor carries the collective thrust.
+      <b>Thrust (all 4)</b> is the M4 test: all four should spin equally. F_x / F_y /
+      M_z add a differential on top so you can check each axis pushes the right pair.</div>
+    <div class="grp">Motor map — not used in this build</div>
+    <div class="hint" style="margin-top:0">The drone mixes on board with the real
+      Sblimp mixer, so channel order is fixed by that firmware. Left here only for
+      reference.</div>
+    <div id="mapui"></div>
+    <div class="row" style="gap:5px;margin-top:5px">
+      <button style="flex:1" onclick="post({action:'reset_map'})">↺ Reset map</button>
+      <button style="flex:1" onclick="post({action:'save'})">💾 Save map</button></div>
+    <div class="hint">Bench-test a channel, see which arm spins, then pick that channel
+      in that arm's dropdown. Picking a channel <b>swaps</b> it with whichever arm had it,
+      so the map always stays one channel per arm.</div>
+  </div>
+
+  <div class="card">
+    <div class="row"><label><b>Airframe</b> <span style="font-size:10px">(host mixer — inactive)</span></label>
+      <select id="layout" onchange="post({action:'layout',value:this.value})"></select></div>
+    <div class="row"><label>Direct force authority</label><span id="auth" class="mono">—</span></div>
+    <details><summary>allocation matrix &nbsp;A · f = wrench</summary>
+      <table class="al" id="alloc"></table>
+      <div class="hint">A row of zeros means that axis has <b>no direct actuation</b> — it is
+        produced by the swing instead, via the matching swing gain.</div>
+    </details>
+    <div id="mixsliders"></div>
+    <div class="row" style="gap:5px;margin-top:6px">
+      <button style="flex:1" onclick="post({action:'reset_mix'})">↺ Reset mixer</button>
+      <button style="flex:1" onclick="post({action:'save'})">💾 Save</button></div>
+  </div>
+
+  <div class="card">
+    <div class="row"><label><b>Mellinger gains</b></label>
+      <button onclick="post({action:'reset_gains'})">↺ Reset to reference</button></div>
+    <div class="hint">Defaults are exactly the values in the <span class="mono">controller_mellinger.c</span>
+      you supplied. The rate-D gains (<span class="mono">kw_*</span>,
+      <span class="mono">kd_omega_rp</span>) assume a 500&nbsp;Hz IMU; here the rates come from
+      25&nbsp;Hz mocap, so start those <b>well below</b> the reference.</div>
+    <div id="gsliders"></div>
+  </div>
+
+  <details class="card"><summary>Controller internals (ctrlMel log group)</summary>
+    <table class="al" id="loght"></table></details>
+
+  <div id="err"></div>
+</div>
+
+<script>
+var state={}, trail=[], built=false;
+var cv=document.getElementById('c'), ctx=cv.getContext('2d'), SCALE=90;
+function resize(){cv.width=cv.clientWidth; cv.height=cv.clientHeight;}
+window.addEventListener('resize',resize); resize();
+function w2p(x,y){return [cv.width/2 + x*SCALE, cv.height/2 - y*SCALE];}
+function p2w(px,py){return [(px-cv.width/2)/SCALE, -(py-cv.height/2)/SCALE];}
+
+async function post(o){try{await fetch('/api',{method:'POST',body:JSON.stringify(o)});}catch(e){}}
+function bench(i){post({action:'bench',index:i,duty:0.15});}
+function setTarget(){
+  post({action:'target', x:+document.getElementById('tx').value,
+        y:+document.getElementById('ty').value, z:+document.getElementById('tz').value,
+        yaw:+document.getElementById('tyaw').value});
+}
+cv.addEventListener('click',function(e){
+  var r=cv.getBoundingClientRect(), w=p2w(e.clientX-r.left, e.clientY-r.top);
+  document.getElementById('tx').value=w[0].toFixed(2);
+  document.getElementById('ty').value=w[1].toFixed(2);
+  post({action:'target', x:+w[0].toFixed(3), y:+w[1].toFixed(3)});
+});
+
+// ---- slider blocks are built once, from the specs the server sends ----------
+function buildSliders(host, spec, actionName, cur){
+  var groups={}, order=[];
+  spec.forEach(function(s){
+    var g=s[5]; if(!groups[g]){groups[g]=[];order.push(g);} groups[g].push(s);
+  });
+  var h='';
+  order.forEach(function(g){
+    h+='<div class="grp">'+g+'</div>';
+    groups[g].forEach(function(s){
+      var k=s[0], lo=s[2], hi=s[3], st=s[4], lab=s[6];
+      var val=(cur[k]!==undefined?cur[k]:s[1]);
+      h+='<div class="sl"><div class="lab"><span>'+lab+'</span>'+
+         '<b id="v_'+actionName+'_'+k+'">'+val+'</b></div>'+
+         '<input type="range" id="s_'+actionName+'_'+k+'" min="'+lo+'" max="'+hi+'" step="'+st+'" '+
+         'value="'+val+'" oninput="slid(\''+actionName+'\',\''+k+'\',this.value)"></div>';
+    });
+  });
+  host.innerHTML=h;
+}
+function slid(action,k,v){
+  document.getElementById('v_'+action+'_'+k).textContent=v;
+  post({action:action,name:k,value:+v});
+}
+
+async function poll(){ try{ state=await (await fetch('/state')).json(); render(); }catch(e){} }
+setInterval(poll,200); poll();
+
+function setPill(id,txt,cls){var e=document.getElementById(id);if(!e)return;
+  e.textContent=txt;e.className='pill'+(cls?' '+cls:'');}
+
+function render(){
+  if(!built && state.mel_spec){
+    buildSliders(document.getElementById('gsliders'), state.mel_spec, 'gain', state.gains||{});
+    buildSliders(document.getElementById('mixsliders'), state.mix_spec, 'mix', state.mix||{});
+    var sel=document.getElementById('layout');
+    sel.innerHTML=(state.layouts||[]).map(function(l){return '<option>'+l+'</option>';}).join('');
+    sel.value=state.layout;
+    var t=state.target||{};
+    ['tx','ty','tz','tyaw'].forEach(function(id,i){
+      document.getElementById(id).value=[t.x,t.y,t.z,t.yaw][i];
+    });
+    built=true;
+  }
+  setPill('track', state.valid?'tracking':'no data', state.valid?'ok':'bad');
+  document.getElementById('rate').textContent=(state.rate||0)+' Hz';
+  document.getElementById('bridge').textContent=state.bridge||'—';
+  var ab=document.getElementById('arm');
+  ab.textContent=state.armed?'◼ DISARM':'▶ ARM (connect bridge)';
+  ab.style.background=state.armed?'#1a4620':'var(--grn)';
+  var eb=document.getElementById('engage');
+  eb.textContent=state.engaged?'DISENGAGE':'ENGAGE';
+  eb.style.background=state.engaged?'#1a4620':'var(--vio)';
+
+  var ctl=state.ctl||{};
+  if(state.engaged){
+    setPill('melpill','Fz '+(ctl.thrust||0).toFixed(0)+'  Fx '+(ctl.roll||0).toFixed(0)+
+            '  Fy '+(ctl.pitch||0).toFixed(0)+'  Mz '+(ctl.yaw||0).toFixed(2),'ok');
+  } else if(state.bench!=null){ setPill('melpill','BENCH M'+(state.bench[0]+1),'warn'); }
+  else setPill('melpill','off','');
+
+  // Per-motor values now exist ONLY on the drone (it does the mixing), so the bars
+  // are driven by telemetry. state.wrench is what we sent: fx, fy, mz, fz.
+  var tlm=state.telem||[0,0,0,0], d=[tlm[0]/65535,tlm[1]/65535,tlm[2]/65535,tlm[3]/65535];
+  var mm=state.motor_map||[0,1,2,3];
+  var arms=['front-right','rear-right','rear-left','front-left'];
+  var armOf=[0,0,0,0]; for(var a=0;a<4;a++) armOf[mm[a]]=a;
+  var en=state.motor_enable||[1,1,1,1], h='';
+  var tl=state.telem||[0,0,0,0], tOK=(state.telem_age!=null&&state.telem_age<2.0);
+  var wr=state.wrench||[0,0,0,0];
+  document.getElementById('wrenchrow').textContent=
+    'Fx '+wr[0].toFixed(0)+'   Fy '+wr[1].toFixed(0)+'   Mz '+wr[2].toFixed(0)+'   Fz '+wr[3].toFixed(0);
+  for(var i=0;i<4;i++){
+    h+='<div class="row" style="margin:3px 0"><label style="width:9.5em;font-size:11.5px'+
+       (en[i]?'':';text-decoration:line-through')+'">M'+(i+1)+' '+arms[armOf[i]]+'</label>'+
+       '<div class="bar"><i style="width:'+Math.round(100*Math.min(1,d[i]))+'%"></i></div>'+'<span class="mono" style="width:3.2em;text-align:right;color:'+(tOK&&Math.abs(tl[i]/65535-d[i])>0.03?'#f85149':'#8b949e')+'" title="what the DRONE says it commanded">'+(tOK?(tl[i]/65535).toFixed(2):'--')+'</span>'+
+       '<span class="mono" style="width:3.4em;text-align:right;cursor:pointer" '+
+       'onclick="post({action:\'motor_enable\',index:'+i+'})">'+d[i].toFixed(2)+'</span></div>';
+  }
+  document.getElementById('bars').innerHTML=h;
+
+  var mh='';
+  for(var a=0;a<4;a++){
+    mh+='<div class="row" style="margin:3px 0"><label style="font-size:11.5px">'+arms[a]+'</label>'+
+        '<select onchange="post({action:\'motor_map\',index:'+a+',channel:+this.value})">';
+    for(var ch=0;ch<4;ch++)
+      mh+='<option value="'+ch+'"'+(mm[a]===ch?' selected':'')+'>M'+(ch+1)+'</option>';
+    mh+='</select></div>';
+  }
+  document.getElementById('mapui').innerHTML=mh;
+  document.getElementById('dutysum').textContent=(tOK?'Σ '+d.reduce(function(a,b){return a+b;},0).toFixed(2):'no telemetry');
+
+  var au=state.auth||[0,0];
+  document.getElementById('auth').textContent='X '+au[0].toFixed(2)+'   Y '+au[1].toFixed(2)+
+     (au[0]<0.05?'   (X = swing only)':'');
+  var al=state.alloc||[], labs=['Fx','Fy','Fz','Mz'];
+  var t='<tr><th></th><th>M1</th><th>M2</th><th>M3</th><th>M4</th></tr>';
+  al.forEach(function(r,i){ t+='<tr><th>'+labs[i]+'</th>'+
+     r.map(function(v){return '<td>'+v.toFixed(3)+'</td>';}).join('')+'</tr>'; });
+  document.getElementById('alloc').innerHTML=t;
+
+  var lg=state.log||{}, keys=Object.keys(lg), lt='';
+  for(var i=0;i<keys.length;i+=2){
+    lt+='<tr><th style="text-align:left">'+keys[i]+'</th><td>'+lg[keys[i]]+'</td>'+
+        (keys[i+1]?'<th style="text-align:left">'+keys[i+1]+'</th><td>'+lg[keys[i+1]]+'</td>':'')+'</tr>';
+  }
+  document.getElementById('loght').innerHTML=lt;
+
+  document.getElementById('err').textContent=state.err||'';
+  var p=state.pos||[0,0,0], r=state.rpy||[0,0,0], v=state.vel||[0,0,0], g=state.gyro||[0,0,0];
+  document.getElementById('hud').textContent=
+    'pos   '+p.map(function(a){return a.toFixed(2);}).join('  ')+' m\n'+
+    'rpy   '+r.map(function(a){return a.toFixed(0);}).join('  ')+' °\n'+
+    'vel   '+v.map(function(a){return a.toFixed(2);}).join('  ')+' m/s\n'+
+    'rate  '+g.map(function(a){return a.toFixed(0);}).join('  ')+' °/s';
+  draw();
+}
+
+function draw(){
+  var W=cv.width,H=cv.height; ctx.clearRect(0,0,W,H);
+  ctx.strokeStyle='#182030'; ctx.lineWidth=1; ctx.beginPath();
+  for(var gx=-6;gx<=6;gx++){var p=w2p(gx,0);ctx.moveTo(p[0],0);ctx.lineTo(p[0],H);}
+  for(var gy=-6;gy<=6;gy++){var q=w2p(0,gy);ctx.moveTo(0,q[1]);ctx.lineTo(W,q[1]);}
+  ctx.stroke();
+  ctx.strokeStyle='#2a3550';var o=w2p(0,0);ctx.beginPath();
+  ctx.moveTo(o[0],0);ctx.lineTo(o[0],H);ctx.moveTo(0,o[1]);ctx.lineTo(W,o[1]);ctx.stroke();
+
+  var t=state.target||{x:0,y:0};
+  var tp=w2p(t.x,t.y); ctx.strokeStyle='#3fb950';ctx.lineWidth=1.8;ctx.beginPath();
+  ctx.arc(tp[0],tp[1],9,0,7);ctx.moveTo(tp[0]-14,tp[1]);ctx.lineTo(tp[0]+14,tp[1]);
+  ctx.moveTo(tp[0],tp[1]-14);ctx.lineTo(tp[0],tp[1]+14);ctx.stroke();
+
+  var p=state.pos;
+  if(state.valid&&p){
+    var last=trail[trail.length-1];
+    if(!last||Math.hypot(p[0]-last[0],p[1]-last[1])>0.02){trail.push([p[0],p[1]]);
+      if(trail.length>800)trail.shift();}
+    ctx.strokeStyle='#8957e588';ctx.lineWidth=1.5;ctx.beginPath();
+    trail.forEach(function(a,k){var q=w2p(a[0],a[1]);if(k===0)ctx.moveTo(q[0],q[1]);else ctx.lineTo(q[0],q[1]);});
+    ctx.stroke();
+    var b=w2p(p[0],p[1]), ya=((state.rpy||[0,0,0])[2])*Math.PI/180;
+    // motor duty dots at the four arm ends, so the swing split is VISIBLE
+    var d=state.duty||[0,0,0,0], ang=[-45,-135,135,45];
+    for(var i=0;i<4;i++){
+      var a=ya+ang[i]*Math.PI/180, mx=b[0]+26*Math.cos(a), my=b[1]-26*Math.sin(a);
+      ctx.fillStyle='#c85a2f';ctx.globalAlpha=0.25+0.75*Math.min(1,d[i]/0.6);
+      ctx.beginPath();ctx.arc(mx,my,4+7*Math.min(1,d[i]),0,7);ctx.fill();ctx.globalAlpha=1;
+    }
+    ctx.strokeStyle='#f0b429';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(b[0],b[1]);
+    ctx.lineTo(b[0]+30*Math.cos(ya),b[1]-30*Math.sin(ya));ctx.stroke();
+    ctx.fillStyle=state.engaged?'#8957e5':'#e6edf3';ctx.beginPath();ctx.arc(b[0],b[1],7,0,7);ctx.fill();
+  }
+}
+</script>

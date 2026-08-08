@@ -1,0 +1,292 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Blimp Wander Panel</title>
+<style>
+  :root{--bg:#0d1117;--card:#161b22;--line:#30363d;--tx:#e6edf3;--dim:#8b949e;
+        --grn:#238636;--red:#da3633;--pur:#8b5cf6;--ok:#3fb950;--bad:#f85149;--warn:#d29922;}
+  *{box-sizing:border-box}
+  body{margin:0;font:14px/1.4 -apple-system,system-ui,sans-serif;background:var(--bg);color:var(--tx);
+       display:flex;height:100vh;overflow:hidden}
+  #view{flex:1;position:relative;background:#0a0e14}
+  #c{width:100%;height:100%;display:block;cursor:crosshair}
+  #hud{position:absolute;top:10px;left:12px;font:12px ui-monospace,monospace;color:var(--dim);pointer-events:none}
+  #big{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font:700 40px system-ui;
+       color:var(--ok);text-shadow:0 0 24px #3fb95088;pointer-events:none;display:none;text-align:center}
+  #side{width:340px;padding:14px;overflow-y:auto;background:var(--bg);border-left:1px solid var(--line)}
+  h1{font-size:16px;margin:0 0 2px}
+  .sub{color:var(--dim);font-size:12px;margin-bottom:10px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:10px;margin-bottom:10px}
+  .row{display:flex;align-items:center;justify-content:space-between;gap:6px;margin:4px 0}
+  label{color:var(--dim)}
+  .mono{font-family:ui-monospace,monospace}
+  .pill{padding:2px 8px;border-radius:10px;background:#21262d;font:12px ui-monospace,monospace}
+  .pill.ok{background:#12331d;color:var(--ok)} .pill.bad{background:#3a1416;color:var(--bad)}
+  .pill.warn{background:#3a2f10;color:var(--warn)}
+  button{background:#21262d;color:var(--tx);border:1px solid var(--line);border-radius:6px;
+         padding:8px 10px;font-size:14px;cursor:pointer}
+  button:hover{border-color:#6e7681}
+  input{background:#0d1117;color:var(--tx);border:1px solid var(--line);border-radius:5px;padding:4px 6px;width:5em}
+  #arm{width:100%;background:var(--grn);border:none;font-weight:bold;padding:11px;margin-bottom:6px}
+  #kill{width:100%;background:var(--red);border:none;font-weight:bold;padding:11px;margin-bottom:10px}
+  #go{width:100%;background:var(--pur);border:none;font-weight:bold;padding:11px;margin-top:6px}
+  .wander{border-color:var(--pur)}
+  .hint{color:var(--dim);font-size:11.5px;margin-top:6px}
+</style>
+
+<div id="view">
+  <canvas id="c"></canvas>
+  <div id="hud">—</div>
+  <div id="big"></div>
+  <button onclick="trail=[]" style="position:absolute;top:8px;right:10px;padding:5px 9px">Clear trail</button>
+  <div style="position:absolute;bottom:8px;left:12px;font-size:11px;color:#5d6a78">
+    shift-drag · set room bounds · 🟣 predicted flyable curve · 🟠 target · 🔵 flown · 🟡 nose</div>
+</div>
+
+<div id="side">
+  <h1>🎲 Blimp Wander Panel</h1>
+  <div class="sub">Flies to random points, parks, flashes its LED — push it to send it onward.</div>
+
+  <div class="card">
+    <div class="row"><label>Blimp tracking</label><span id="track" class="pill bad">no data</span></div>
+    <div class="row"><label>NatNet</label><span id="rate" class="mono">0 Hz</span></div>
+    <div class="row"><label>ESP-NOW bridge</label><span id="bridge" class="mono">—</span></div>
+  </div>
+
+  <button id="arm" onclick="post({action:'fly',on:!state.flying})">▶ ARM (connect bridge)</button>
+  <button id="kill" onclick="post({action:'kill'})">■ KILL</button>
+
+  <div class="card wander">
+    <div class="row"><label><b>🎲 Wander</b></label><span id="wpill" class="pill">idle</span></div>
+    <button id="go" onclick="post({action:'wander',on:!state.wander})">▶ START wandering</button>
+    <button style="width:100%;margin-top:6px" onclick="post({action:'wander_next'})">⏭ Next point now</button>
+    <div class="hint"><b>Cycle:</b> picks a random point → flies the curve → parks (cruise cut to 0, coasts to a stop)
+      → the <b>drone's green LED flashes</b> = safe to grab → <b>push it</b> and it picks the next point.
+      The LED needs the arrival-LED firmware flashed; without it everything else still works.</div>
+  </div>
+
+  <div class="card">
+    <div class="row"><label><b>Point source</b></label><span id="qpill" class="pill">0 pts</span></div>
+    <div class="row" style="gap:5px">
+      <button id="mRandom" style="flex:1" onclick="post({action:'wander_mode',mode:'random'})">🎲 Random</button>
+      <button id="mList" style="flex:1" onclick="post({action:'wander_mode',mode:'list'})">📍 My points</button>
+    </div>
+    <div class="row" style="gap:5px">
+      <button style="flex:1" onclick="post({action:'wander_undo_pt'})">↶ Undo</button>
+      <button style="flex:1" onclick="post({action:'wander_clear_pts'})">✕ Clear</button>
+    </div>
+    <div class="hint"><b>Random</b> picks points inside the bounds below. <b>My points</b> flies the points you
+      <b>click on the view</b>, in order, looping forever — same park/LED/push hand-off either way.</div>
+  </div>
+
+  <div class="card">
+    <div class="row"><label><b>Room bounds</b> (m)</label><button onclick="useCurrentAsCenter()">⊹ center here</button></div>
+    <div class="row"><label>X min / max</label><input id="xmin" type="number" step="0.1" oninput="cfg()"><input id="xmax" type="number" step="0.1" oninput="cfg()"></div>
+    <div class="row"><label>Y min / max</label><input id="ymin" type="number" step="0.1" oninput="cfg()"><input id="ymax" type="number" step="0.1" oninput="cfg()"></div>
+    <div class="hint"><b>Shift-drag</b> a box on the view to set the bounds visually. Keep them inside the mocap volume and away from walls.</div>
+  </div>
+
+  <div class="card">
+    <div class="row"><label>Altitude (m)</label><input id="wz" type="number" step="0.1" min="0.3" max="3" oninput="cfg()"></div>
+    <div class="row"><label>Min hop distance (m)</label><input id="wsep" type="number" step="0.1" min="0.2" max="4" oninput="cfg()"></div>
+    <div class="row"><label>Settle before push (s)</label><input id="whold" type="number" step="0.5" min="0" max="20" oninput="cfg()"></div>
+    <div class="row"><label>Slow-down distance (m)</label><input id="wslow" type="number" step="0.1" min="0" max="4" oninput="cfg()"><span id="scpill" class="pill">100%</span></div>
+    <div class="row"><label>Push: distance (m)</label><input id="wpush" type="number" step="0.05" min="0.1" max="1.5" oninput="cfg()"></div>
+    <div class="row"><label>Push: shove speed (m/s)</label><input id="wpushv" type="number" step="0.02" min="0.05" max="1" oninput="cfg()"></div>
+    <div class="hint"><b>Slow-down distance:</b> cruise is rolled off linearly over the last N metres before the arrive
+      ring, so it is already <b>coasting</b> when it gets there instead of driving in at full power and overshooting
+      (it can't brake). Raise it if it still overshoots; the pill shows live cruise %.<br>
+      <b>Push:</b> two independent triggers, whichever fires first — a <b>shove</b> (sharp speed, this is what tells a
+      real push apart from slow air drift) or a slower <b>carry</b> past the distance. Lower the speed if pushes
+      aren't registering; raise it if its own drift keeps re-triggering.</div>
+  </div>
+
+  <div class="card">
+    <div class="row"><label><b>Steering &amp; speed</b></label></div>
+    <div class="row"><label>Cruise speed (fwdMaxN)</label><input id="g_fwdMaxN" type="number" step="0.02" min="0" max="1" oninput="setGain('fwdMaxN',this.value)"></div>
+    <div class="row"><label>Steer strength (kpHead)</label><input id="g_kpHead" type="number" step="0.05" min="0" max="3" oninput="setGain('kpHead',this.value)"></div>
+    <div class="row"><label>Turn damping (kdHead)</label><input id="g_kdHead" type="number" step="0.001" min="0" max="0.05" oninput="setGain('kdHead',this.value)"></div>
+    <div class="row"><label>Drift crab (driftK)</label><input id="g_driftK" type="number" step="0.05" min="0" max="3" oninput="setGain('driftK',this.value)"></div>
+    <div class="row"><label>Arrive radius (arriveR)</label><input id="g_arriveR" type="number" step="0.05" min="0.1" max="1.5" oninput="setGain('arriveR',this.value)"></div>
+    <div class="hint"><b>arriveR</b> is both the "we're there" radius here AND the radius the firmware flashes the LED inside. Slower cruise = tighter arcs = it can reach points closer to a wall.</div>
+  </div>
+
+  <div id="err" style="color:var(--bad);font-size:12px"></div>
+</div>
+
+<script>
+var state={}, trail=[];
+var cv=document.getElementById('c'), ctx=cv.getContext('2d'), SCALE=70;
+function resize(){cv.width=cv.clientWidth; cv.height=cv.clientHeight;}
+window.addEventListener('resize',resize); resize();
+function w2p(x,y){return [cv.width/2 + x*SCALE, cv.height/2 - y*SCALE];}
+function p2w(px,py){return [(px-cv.width/2)/SCALE, -(py-cv.height/2)/SCALE];}
+
+async function post(o){try{await fetch('/api',{method:'POST',body:JSON.stringify(o)});}catch(e){}}
+function setGain(name,v){post({action:'gain',name:name,value:+v});}
+var GAIN_IDS=['fwdMaxN','kpHead','kdHead','driftK','arriveR'];
+function num(id){return +document.getElementById(id).value;}
+function cfg(){
+  post({action:'wander_cfg', wander_z:num('wz'), wander_min_sep:num('wsep'),
+        wander_hold_s:num('whold'), wander_push_m:num('wpush'), wander_push_v:num('wpushv'),
+        wander_slow_m:num('wslow'),
+        bounds:{xmin:num('xmin'),xmax:num('xmax'),ymin:num('ymin'),ymax:num('ymax')}});
+}
+// plain click = add a point to MY POINTS (shift-drag still sets the bounds box)
+cv.addEventListener('click',function(e){
+  if(e.shiftKey)return;
+  var r=cv.getBoundingClientRect(), w=p2w(e.clientX-r.left,e.clientY-r.top);
+  post({action:'wander_add_pt',x:+w[0].toFixed(3),y:+w[1].toFixed(3)});
+  if(state.wander_mode!=='list')post({action:'wander_mode',mode:'list'});
+});
+function useCurrentAsCenter(){
+  var m=state.mapped||{}; if(m.h0==null)return;
+  var half=1.5;
+  document.getElementById('xmin').value=(m.h0-half).toFixed(1);
+  document.getElementById('xmax').value=(m.h0+half).toFixed(1);
+  document.getElementById('ymin').value=(m.h1-half).toFixed(1);
+  document.getElementById('ymax').value=(m.h1+half).toFixed(1);
+  cfg();
+}
+// shift-drag a bounds box on the view
+var dragA=null;
+cv.addEventListener('mousedown',function(e){
+  if(!e.shiftKey)return;
+  var r=cv.getBoundingClientRect(); dragA=p2w(e.clientX-r.left,e.clientY-r.top);
+});
+cv.addEventListener('mouseup',function(e){
+  if(!dragA)return;
+  var r=cv.getBoundingClientRect(), b=p2w(e.clientX-r.left,e.clientY-r.top);
+  if(Math.abs(b[0]-dragA[0])>0.3&&Math.abs(b[1]-dragA[1])>0.3){
+    document.getElementById('xmin').value=Math.min(dragA[0],b[0]).toFixed(2);
+    document.getElementById('xmax').value=Math.max(dragA[0],b[0]).toFixed(2);
+    document.getElementById('ymin').value=Math.min(dragA[1],b[1]).toFixed(2);
+    document.getElementById('ymax').value=Math.max(dragA[1],b[1]).toFixed(2);
+    cfg();
+  }
+  dragA=null;
+});
+
+async function poll(){try{ state=await (await fetch('/state')).json(); render(); }catch(e){}}
+setInterval(poll,150); poll();
+
+function setPill(id,txt,cls){var e=document.getElementById(id);if(!e)return;e.textContent=txt;e.className='pill'+(cls?' '+cls:'');}
+function syncInput(id,val){var e=document.getElementById(id);if(e&&document.activeElement!==e&&val!==undefined&&val!==null)e.value=val;}
+
+function render(){
+  var tr=state.valid; setPill('track', tr?'tracking':'no data', tr?'ok':'bad');
+  var rt=document.getElementById('rate'); if(rt)rt.textContent=(state.rate||0)+' Hz';
+  var br=document.getElementById('bridge'); if(br)br.textContent=state.bridge||'—';
+  document.getElementById('arm').textContent=state.flying?'◼ DISARM':'▶ ARM (connect bridge)';
+  document.getElementById('arm').style.background=state.flying?'#1a4620':'var(--grn)';
+  var g=document.getElementById('go');
+  g.textContent=state.wander?'■ STOP wandering':'▶ START wandering';
+  g.style.background=state.wander?'#1a4620':'var(--pur)';
+
+  var st=state.wander_state||'idle', big=document.getElementById('big');
+  if(st==='goto') setPill('wpill','flying to point','warn');
+  else if(st==='arrived') setPill('wpill','parking… '+(state.wander_hold_left||0).toFixed(1)+'s','warn');
+  else if(st==='waitpush') setPill('wpill','PUSH ME','ok');
+  else setPill('wpill','idle','');
+  // point-source buttons + queue count
+  var isList=(state.wander_mode==='list'), q=state.wander_queue||[];
+  var mr=document.getElementById('mRandom'), ml=document.getElementById('mList');
+  if(mr)mr.style.background=isList?'#21262d':'#12331d';
+  if(ml)ml.style.background=isList?'#12331d':'#21262d';
+  setPill('qpill', isList?(q.length+' pts · #'+((state.wander_qi||0)+1)):'random', q.length||!isList?'ok':'bad');
+  if(st==='waitpush'){ big.style.display='block'; big.innerHTML='🟢 PUSH ME<div style="font-size:15px;color:#8b949e">LED flashing — give it a shove</div>'; }
+  else if(st==='arrived'){ big.style.display='block'; big.innerHTML='<div style="font-size:22px;color:#d29922">settling…</div>'; }
+  else big.style.display='none';
+
+  var b=state.wander_bounds||{};
+  ['xmin','xmax','ymin','ymax'].forEach(function(k){syncInput(k, b[k]);});
+  syncInput('wz',state.wander_z); syncInput('wsep',state.wander_min_sep);
+  syncInput('whold',state.wander_hold_s); syncInput('wpush',state.wander_push_m);
+  syncInput('wpushv',state.wander_push_v); syncInput('wslow',state.wander_slow_m);
+  var fs=state.wander_fwd_scale; if(fs==null)fs=1;
+  setPill('scpill', Math.round(fs*100)+'% cruise', fs<0.99?'warn':'');
+  var gv=state.gains||{};
+  GAIN_IDS.forEach(function(k){syncInput('g_'+k, gv[k]);});
+  document.getElementById('err').textContent=state.err||'';
+  var m=state.mapped||{};
+  document.getElementById('hud').textContent='x '+(m.h0!=null?m.h0.toFixed(2):'—')+'  y '+(m.h1!=null?m.h1.toFixed(2):'—')+
+     '  alt '+(m.alt!=null?m.alt.toFixed(2):'—')+' m  yaw '+(m.yaw!=null?Math.round(m.yaw):'—')+'°';
+  draw();
+}
+
+function draw(){
+  var W=cv.width,H=cv.height; ctx.clearRect(0,0,W,H);
+  ctx.strokeStyle='#182030'; ctx.lineWidth=1; ctx.beginPath();
+  for(var gx=-6;gx<=6;gx++){var p=w2p(gx,0);ctx.moveTo(p[0],0);ctx.lineTo(p[0],H);}
+  for(var gy=-6;gy<=6;gy++){var q=w2p(0,gy);ctx.moveTo(0,q[1]);ctx.lineTo(W,q[1]);}
+  ctx.stroke();
+  ctx.strokeStyle='#2a3550';var o=w2p(0,0);ctx.beginPath();ctx.moveTo(o[0],0);ctx.lineTo(o[0],H);ctx.moveTo(0,o[1]);ctx.lineTo(W,o[1]);ctx.stroke();
+
+  // room bounds box
+  var b=state.wander_bounds;
+  if(b&&b.xmin!=null){
+    var p1=w2p(b.xmin,b.ymin), p2=w2p(b.xmax,b.ymax);
+    ctx.save();ctx.setLineDash([7,5]);ctx.strokeStyle='#8b5cf688';ctx.lineWidth=1.5;
+    ctx.strokeRect(Math.min(p1[0],p2[0]),Math.min(p1[1],p2[1]),Math.abs(p2[0]-p1[0]),Math.abs(p2[1]-p1[1]));
+    ctx.restore();
+  }
+  // user-picked point queue (My points mode): numbered, next one highlighted
+  var q=state.wander_queue||[];
+  if(q.length){
+    var qi=(state.wander_qi||0)%q.length, isList=(state.wander_mode==='list');
+    ctx.save(); ctx.globalAlpha=isList?1:0.35;
+    q.forEach(function(pt,k){
+      var p=w2p(pt[0],pt[1]), nxt=(k===qi);
+      ctx.fillStyle=nxt?'#f0a020':'#3fb950';
+      ctx.beginPath();ctx.arc(p[0],p[1],nxt?8:6,0,7);ctx.fill();
+      ctx.fillStyle='#0b0f14';ctx.font='10px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
+      ctx.fillText(k+1,p[0],p[1]);
+    });
+    ctx.textBaseline='alphabetic'; ctx.restore();
+  }
+  // PREDICTED flyable curve (what the pursuit law + plant actually produce)
+  var pc=state.wander_predicted||[];
+  if(pc.length>1){
+    ctx.strokeStyle='#8b5cf6';ctx.lineWidth=2.5;ctx.beginPath();
+    pc.forEach(function(q,k){var p=w2p(q[0],q[1]);if(k===0)ctx.moveTo(p[0],p[1]);else ctx.lineTo(p[0],p[1]);});
+    ctx.stroke();
+    // faint straight line for contrast: shows how much the real route curves
+    var s=w2p(pc[0][0],pc[0][1]), e=w2p(pc[pc.length-1][0],pc[pc.length-1][1]);
+    ctx.save();ctx.setLineDash([3,5]);ctx.globalAlpha=0.35;ctx.strokeStyle='#8b5cf6';ctx.lineWidth=1;
+    ctx.beginPath();ctx.moveTo(s[0],s[1]);ctx.lineTo(e[0],e[1]);ctx.stroke();ctx.restore();ctx.globalAlpha=1;
+  }
+  // target
+  var t=state.wander_target;
+  if(t){
+    var tp=w2p(t[0],t[1]);
+    ctx.strokeStyle='#f0a020';ctx.lineWidth=2;
+    ctx.beginPath();ctx.arc(tp[0],tp[1],10,0,7);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(tp[0]-14,tp[1]);ctx.lineTo(tp[0]+14,tp[1]);
+    ctx.moveTo(tp[0],tp[1]-14);ctx.lineTo(tp[0],tp[1]+14);ctx.stroke();
+    // arriveR ring = where the LED starts flashing
+    var ar=(state.gains||{}).arriveR;
+    if(ar){ctx.save();ctx.setLineDash([4,4]);ctx.globalAlpha=0.6;ctx.strokeStyle='#3fb950';
+      ctx.beginPath();ctx.arc(tp[0],tp[1],ar*SCALE,0,7);ctx.stroke();ctx.restore();ctx.globalAlpha=1;}
+  }
+  var m=state.mapped||{};
+  if(state.valid&&m.h0!=null){
+    var last=trail[trail.length-1];
+    if(!last||Math.hypot(m.h0-last[0],m.h1-last[1])>0.02){trail.push([m.h0,m.h1]);if(trail.length>800)trail.shift();}
+    ctx.strokeStyle='#2f7dc888';ctx.lineWidth=1.5;ctx.beginPath();
+    trail.forEach(function(q,k){var p=w2p(q[0],q[1]);if(k===0)ctx.moveTo(p[0],p[1]);else ctx.lineTo(p[0],p[1]);});ctx.stroke();
+    var bp=w2p(m.h0,m.h1), ya=(m.yaw||0)*Math.PI/180;
+    var hx=bp[0]+30*Math.cos(ya), hy=bp[1]-30*Math.sin(ya);
+    ctx.strokeStyle='#ffd166';ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(bp[0],bp[1]);ctx.lineTo(hx,hy);ctx.stroke();
+    ctx.fillStyle='#ffd166';ctx.beginPath();ctx.arc(hx,hy,3,0,7);ctx.fill();
+    var parked=(state.wander_state==='waitpush');
+    ctx.fillStyle=parked?'#3fb950':'#1f6feb';
+    ctx.beginPath();ctx.arc(bp[0],bp[1],parked?9:7,0,7);ctx.fill();
+    if(parked){ // pulsing halo so it's obvious across the room
+      var a=0.35+0.25*Math.sin(Date.now()/180);
+      ctx.save();ctx.globalAlpha=a;ctx.strokeStyle='#3fb950';ctx.lineWidth=3;
+      ctx.beginPath();ctx.arc(bp[0],bp[1],17,0,7);ctx.stroke();ctx.restore();
+    }
+    ctx.fillStyle='#ffd166';ctx.font='11px ui-monospace';ctx.textAlign='left';
+    ctx.fillText((m.yaw||0).toFixed(0)+'°',bp[0]+13,bp[1]-9);
+  }
+}
+</script>

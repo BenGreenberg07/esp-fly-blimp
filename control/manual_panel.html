@@ -1,0 +1,151 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Blimp Manual Panel</title>
+<style>
+  :root{--bg:#0d1117;--card:#161b22;--line:#30363d;--tx:#e6edf3;--dim:#8b949e;
+        --grn:#238636;--red:#da3633;--ok:#3fb950;--bad:#f85149;}
+  *{box-sizing:border-box}
+  body{margin:0;font:14px/1.4 -apple-system,system-ui,sans-serif;background:var(--bg);color:var(--tx);
+       display:flex;height:100vh;overflow:hidden}
+  #view{flex:1;position:relative;background:#0a0e14}
+  #c{width:100%;height:100%;display:block}
+  #hud{position:absolute;top:10px;left:12px;font:12px ui-monospace,monospace;color:var(--dim);pointer-events:none}
+  #side{width:320px;padding:14px;overflow-y:auto;background:var(--bg);border-left:1px solid var(--line)}
+  h1{font-size:16px;margin:0 0 2px}
+  .sub{color:var(--dim);font-size:12px;margin-bottom:10px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:10px;margin-bottom:10px}
+  .row{display:flex;align-items:center;justify-content:space-between;gap:6px;margin:4px 0}
+  label{color:var(--dim)}
+  .mono{font-family:ui-monospace,monospace}
+  .pill{padding:2px 8px;border-radius:10px;background:#21262d;font:12px ui-monospace,monospace}
+  .pill.ok{background:#12331d;color:var(--ok)} .pill.bad{background:#3a1416;color:var(--bad)}
+  button{background:#21262d;color:var(--tx);border:1px solid var(--line);border-radius:6px;
+         padding:8px 10px;font-size:14px;cursor:pointer}
+  button:hover{border-color:#6e7681}
+  input[type=range]{width:100%}
+  #arm{width:100%;background:var(--grn);border:none;font-weight:bold;padding:11px;margin-bottom:6px}
+  #kill{width:100%;background:var(--red);border:none;font-weight:bold;padding:11px;margin-bottom:10px}
+  .kk{display:inline-block;padding:5px 10px;border:1px solid var(--line);border-radius:5px;
+      font:12px ui-monospace,monospace;margin:2px;transition:background .05s}
+  .kk.act{background:#1f6feb;border-color:#1f6feb}
+  .hint{color:var(--dim);font-size:11.5px;margin-top:6px}
+</style>
+
+<div id="view">
+  <canvas id="c"></canvas>
+  <div id="hud">—</div>
+</div>
+
+<div id="side">
+  <h1>🕹️ Blimp Manual Panel</h1>
+  <div class="sub">Pure hand-flying, no autonomy/MPC/tests. Keyboard: W/S forward, A/D turn, Q/E up/down, Space = KILL.</div>
+
+  <div class="card">
+    <div class="row"><label>Blimp tracking</label><span id="track" class="pill bad">no data</span></div>
+    <div class="row"><label>NatNet</label><span id="rate" class="mono">0 Hz</span></div>
+    <div class="row"><label>ESP-NOW bridge</label><span id="bridge" class="mono">—</span></div>
+  </div>
+
+  <button id="arm" onclick="post({action:'fly',on:!state.flying})">▶ ARM (connect bridge)</button>
+  <button id="kill" onclick="post({action:'kill'})">■ KILL</button>
+
+  <div class="card">
+    <div class="row"><label>Teleop</label><span id="manlvl" class="mono">fwd 0%</span></div>
+    <div id="keys">
+      <span class="kk" id="kW">W fwd</span><span class="kk" id="kS">S brake</span>
+      <span class="kk" id="kA">A ↺</span><span class="kk" id="kD">D ↻</span>
+      <span class="kk" id="kQ">Q ↑</span><span class="kk" id="kE">E ↓</span>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <button id="hoverBtn" style="flex:1" onclick="post({action:'hover',on:!(state&&state.hover)})">⊙ Hover: off</button>
+    </div>
+    <div class="hint">Hover holds a baseline Up thrust so it floats while you hand-fly (tune with the Up slider below).</div>
+  </div>
+
+  <div class="card">
+    <div class="row"><label>Turn trim</label><span id="mtval" class="mono">0.00</span></div>
+    <input type="range" min="-0.5" max="0.5" step="0.01" value="0" id="mtrim" oninput="setTrim(this.value)">
+  </div>
+
+  <div class="card">
+    <div class="row"><label>Forward</label><input type="range" min="0" max="1" step="0.02" id="pw_fwd" oninput="setPow('fwd',this.value)" style="flex:1"><span class="mono" id="pv_fwd">—</span></div>
+    <div class="row"><label>Up</label><input type="range" min="0" max="1" step="0.02" id="pw_up" oninput="setPow('up',this.value)" style="flex:1"><span class="mono" id="pv_up">—</span></div>
+    <div class="row"><label>Down</label><input type="range" min="0" max="1" step="0.02" id="pw_down" oninput="setPow('down',this.value)" style="flex:1"><span class="mono" id="pv_down">—</span></div>
+    <div class="row"><label>Left turn</label><input type="range" min="0" max="1" step="0.02" id="pw_left" oninput="setPow('left',this.value)" style="flex:1"><span class="mono" id="pv_left">—</span></div>
+    <div class="row"><label>Right turn</label><input type="range" min="0" max="1" step="0.02" id="pw_right" oninput="setPow('right',this.value)" style="flex:1"><span class="mono" id="pv_right">—</span></div>
+  </div>
+</div>
+
+<script>
+var state={}, trail=[];
+var cv=document.getElementById('c'), ctx=cv.getContext('2d'), SCALE=70;
+function resize(){cv.width=cv.clientWidth; cv.height=cv.clientHeight;}
+window.addEventListener('resize',resize); resize();
+function w2p(x,y){return [cv.width/2 + x*SCALE, cv.height/2 - y*SCALE];}
+
+async function post(o){try{await fetch('/api',{method:'POST',body:JSON.stringify(o)});}catch(e){}}
+function setTrim(v){document.getElementById('mtval').textContent=(+v).toFixed(2);post({action:'trim',value:+v});}
+function setPow(n,v){document.getElementById('pv_'+n).textContent=(+v).toFixed(2);post({action:'power',name:n,value:+v});}
+
+const KEYMAP={w:'W',s:'S',a:'A',d:'D',q:'Q',e:'E'};
+const curKeys={W:false,S:false,A:false,D:false,Q:false,E:false};
+function sendKeys(){post({action:'keys',keys:curKeys});}
+function isTyping(){var el=document.activeElement;return el&&(el.tagName==='INPUT'||el.tagName==='TEXTAREA');}
+window.addEventListener('keydown',function(e){
+  if(e.code==='Space'&&!isTyping()){e.preventDefault();post({action:'kill'});return;}
+  if(isTyping())return;
+  var k=KEYMAP[e.key.toLowerCase()];if(!k||curKeys[k])return;
+  curKeys[k]=true;sendKeys();
+});
+window.addEventListener('keyup',function(e){
+  var k=KEYMAP[e.key.toLowerCase()];if(!k||!curKeys[k])return;
+  curKeys[k]=false;sendKeys();
+});
+
+var trimSet=false, powSet=false;
+async function poll(){try{ state=await (await fetch('/state')).json(); render(); }catch(e){}}
+setInterval(poll,200); poll();
+
+function setPill(id,txt,cls){var e=document.getElementById(id);if(!e)return;e.textContent=txt;e.className='pill'+(cls?' '+cls:'');}
+
+function render(){
+  var tr=state.valid; setPill('track', tr?'tracking':'no data', tr?'ok':'bad');
+  var rt=document.getElementById('rate'); if(rt)rt.textContent=(state.rate||0)+' Hz';
+  var br=document.getElementById('bridge'); if(br)br.textContent=state.bridge||'—';
+  document.getElementById('arm').textContent=state.flying?'◼ DISARM':'▶ ARM (connect bridge)';
+  document.getElementById('arm').style.background=state.flying?'#1a4620':'var(--grn)';
+  document.getElementById('manlvl').textContent='fwd '+Math.round((state.fwd_level||0)*100)+'%';
+  var hb=document.getElementById('hoverBtn');
+  if(hb){hb.textContent=state.hover?'⊙ Hover: ON':'⊙ Hover: off';hb.style.background=state.hover?'#1a4620':'#21262d';}
+  ['W','S','A','D','Q','E'].forEach(function(k){var el=document.getElementById('k'+k);
+    if(el)el.className='kk'+((state.keys&&state.keys[k])?' act':'');});
+  if(!trimSet&&state.manual_trim!==undefined){document.getElementById('mtrim').value=state.manual_trim;
+    document.getElementById('mtval').textContent=(+state.manual_trim).toFixed(2);trimSet=true;}
+  if(!powSet&&state.powers){for(var n in state.powers){var s=document.getElementById('pw_'+n),v=document.getElementById('pv_'+n);
+    if(s){s.value=state.powers[n];v.textContent=(+state.powers[n]).toFixed(2);}}powSet=true;}
+  var m=state.mapped||{};
+  document.getElementById('hud').textContent='x '+(m.h0!=null?m.h0.toFixed(2):'—')+'  y '+(m.h1!=null?m.h1.toFixed(2):'—')+
+     '  alt '+(m.alt!=null?m.alt.toFixed(2):'—')+' m  yaw '+(m.yaw!=null?Math.round(m.yaw):'—')+'°';
+  draw();
+}
+
+function draw(){
+  var W=cv.width,H=cv.height; ctx.clearRect(0,0,W,H);
+  ctx.strokeStyle='#182030'; ctx.lineWidth=1; ctx.beginPath();
+  for(var gx=-6;gx<=6;gx++){var p=w2p(gx,0);ctx.moveTo(p[0],0);ctx.lineTo(p[0],H);}
+  for(var gy=-6;gy<=6;gy++){var q=w2p(0,gy);ctx.moveTo(0,q[1]);ctx.lineTo(W,q[1]);}
+  ctx.stroke();
+  ctx.strokeStyle='#2a3550';var o=w2p(0,0);ctx.beginPath();ctx.moveTo(o[0],0);ctx.lineTo(o[0],H);ctx.moveTo(0,o[1]);ctx.lineTo(W,o[1]);ctx.stroke();
+  var m=state.mapped||{};
+  if(state.valid&&m.h0!=null){
+    var last=trail[trail.length-1];
+    if(!last||Math.hypot(m.h0-last[0],m.h1-last[1])>0.02){trail.push([m.h0,m.h1]);if(trail.length>600)trail.shift();}
+    ctx.strokeStyle='#3fb95088';ctx.lineWidth=1.5;ctx.beginPath();
+    trail.forEach(function(t,k){var p=w2p(t[0],t[1]);if(k===0)ctx.moveTo(p[0],p[1]);else ctx.lineTo(p[0],p[1]);});ctx.stroke();
+    var b=w2p(m.h0,m.h1),ya=(m.yaw||0)*Math.PI/180;
+    ctx.strokeStyle='#f0b429';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(b[0],b[1]);
+    ctx.lineTo(b[0]+22*Math.cos(ya),b[1]-22*Math.sin(ya));ctx.stroke();
+    ctx.fillStyle='#e6edf3';ctx.beginPath();ctx.arc(b[0],b[1],7,0,7);ctx.fill();
+  }
+}
+</script>

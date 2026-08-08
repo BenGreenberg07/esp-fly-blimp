@@ -1,0 +1,14 @@
+build/
+.venv/
+__pycache__/
+*.bin
+cache/
+.DS_Store
+sdkconfig.old
+
+# local-only tools
+manual_panel_server.py
+
+# flight logs are per-session data, not source (the identified plant model is kept)
+control/flight_logs/*.csv
+control/flight_logs/*.png

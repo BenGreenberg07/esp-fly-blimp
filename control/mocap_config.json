@@ -1,0 +1,97 @@
+{
+  "active": "tilted",
+  "profiles": {
+    "tilted": {
+      "manual_trim": 0.0,
+      "yaw_trim": -0.04296813252898402,
+      "powers": {
+        "fwd": 0.22,
+        "up": 0.8,
+        "down": 0.46,
+        "left": 0.64,
+        "right": 0.64
+      },
+      "gains": {
+        "kpZ": 21000.0,
+        "kiZ": 1200.0,
+        "kdZ": 2600.0,
+        "zff": 19000.0,
+        "iLimZ": 2500.0,
+        "kpHead": 2.65,
+        "kdHead": 0.037,
+        "turnCap": 0.9,
+        "alignFloor": 0.35,
+        "turnBoost": 0.35,
+        "driftK": 1.3,
+        "kVel": 0.8,
+        "fwdMaxN": 0.18,
+        "arriveR": 0.3,
+        "holdExit": 2.6,
+        "lookahead": 0.35,
+        "fwdMaxPwm": 25000.0,
+        "turnMaxPwm": -32767.0,
+        "vertMaxPwm": 28000.0,
+        "replanThresh": 0.55,
+        "staleMs": 200.0,
+        "yawSlew": 60.0,
+        "rampEn": 1.0
+      }
+    },
+    "straight": {
+      "manual_trim": 0.0,
+      "yaw_trim": 0.0,
+      "powers": {
+        "fwd": 0.36,
+        "up": 0.92,
+        "down": 0.5,
+        "left": 0.56,
+        "right": 0.56
+      },
+      "gains": {
+        "kpZ": 24000.0,
+        "kiZ": 1200.0,
+        "kdZ": 9500.0,
+        "zff": 11000.0,
+        "iLimZ": 12000.0,
+        "kpHead": 0.9,
+        "kdHead": 0.037,
+        "turnCap": 0.4,
+        "alignFloor": 0.35,
+        "vCruise": 0.15,
+        "kApp": 0.5,
+        "kVel": 0.7,
+        "fwdMaxN": 0.25,
+        "arriveR": 0.3,
+        "holdExit": 2.5,
+        "lookahead": 0.5,
+        "fwdMaxPwm": 65535.0,
+        "turnMaxPwm": -32767.0,
+        "vertMaxPwm": 28000.0,
+        "replanThresh": 0.4,
+        "staleMs": 300.0
+      }
+    }
+  },
+  "target_source": "manual",
+  "target": {
+    "x": -0.4,
+    "y": -0.6,
+    "z": 1.0
+  },
+  "path_mode": "path",
+  "circle": {
+    "r": 1.9,
+    "lead": 0.01,
+    "dir": 1.0,
+    "lead_m": 0.25,
+    "look_m": 1.0
+  },
+  "waypoints": [
+    [
+      -4.18125,
+      -1.5625
+    ]
+  ],
+  "wp_loop": true,
+  "heading_deg": 127.39999999999998
+}

@@ -1,0 +1,42 @@
+CONFIG_FREERTOS_UNICORE=n
+CONFIG_ESP32S3_DEFAULT_CPU_FREQ_240=y
+CONFIG_ESP32S3_DEFAULT_CPU_FREQ_MHZ=240
+
+# ---- Real ESP-FLY pin map (so `idf.py set-target esp32s3` keeps the correct
+# ---- pins instead of regenerating generic defaults). Matches the original
+# ---- committed sdkconfig. IMU on I2C0 = GPIO5/6 is the key one.
+CONFIG_MOTOR01_PIN=7
+CONFIG_MOTOR02_PIN=4
+CONFIG_MOTOR03_PIN=3
+CONFIG_MOTOR04_PIN=1
+CONFIG_I2C0_PIN_SDA=5
+CONFIG_I2C0_PIN_SCL=6
+CONFIG_I2C1_PIN_SDA=40
+CONFIG_I2C1_PIN_SCL=41
+CONFIG_MPU_PIN_INT=8
+CONFIG_ADC1_PIN=10
+CONFIG_LED_PIN_BLUE=11
+CONFIG_LED_PIN_GREEN=9
+CONFIG_LED_PIN_RED=43
+CONFIG_BUZ1_PIN_POS=39
+CONFIG_BUZ2_PIN_NEG=38
+
+# ---- Flash: the XIAO ESP32-S3 has 8MB (config previously defaulted to 2MB).
+# ---- Needed so the larger app (Wi-Fi + BLE/NimBLE) and a bigger app partition fit.
+CONFIG_ESPTOOLPY_FLASHSIZE_2MB=n
+CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y
+CONFIG_ESPTOOLPY_FLASHSIZE="8MB"
+
+# ---- Custom partition table: 3MB app partition (stock 1MB single-app is too
+# ---- small once Bluetooth/NimBLE is linked in alongside Wi-Fi).
+CONFIG_PARTITION_TABLE_SINGLE_APP=n
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+CONFIG_PARTITION_TABLE_FILENAME="partitions.csv"
+
+# ---- Bluetooth Low Energy via NimBLE host (the blimp's BLE control link).
+# ---- Coexists with Wi-Fi on the shared 2.4GHz antenna via software coexistence.
+CONFIG_BT_ENABLED=y
+CONFIG_BT_BLUEDROID_ENABLED=n
+CONFIG_BT_NIMBLE_ENABLED=y
+CONFIG_ESP_COEX_SW_COEXIST_ENABLE=y
